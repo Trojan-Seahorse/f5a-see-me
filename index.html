@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>fcitx5-android see me</h1>
+  </header>
+
+  <main>
+    <section class="panel active" id="tab-layout" role="tabpanel">
+      <!-- 预览面板, 外套一个detail 框默认展开 -->
+      <details class="keyboard-preview-panel" open>
+        <summary>布局预览</summary>
+        <div id="layout-preview" class="layout-preview"></div>
+        <div id="layout-preview-meta" class="status"></div>
+      </details>
+      <!-- 编辑面板 -->
+      <div class="layout-workbench">
+        <div class="card layout-main-column-card" id="layout-main-column-card">
+          <div class="layout-main-column">
+            <details class="card" open>
+              <summary>布局编辑</summary>
+              <div class="editor-surface">
+                <div class="spinner-strip">
+                  <select id="layout-base-select" aria-label="布局"></select>
+                  <select id="layout-submode-select" aria-label="子模式"></select>
+                  <button id="layout-add-layout" class="icon-button" title="新增">+</button>
+                  <button id="layout-delete-layout" class="icon-button" title="删除当前布局">🗑</button>
+                </div>
+                <div id="layout-rows" class="layout-rows"></div>
+              </div>
+            </details>
+
+            <details class="card">
+              <summary>布局操作</summary>
+              <div class="toolbar details-toolbar">
+                <button id="layout-rename-layout">重命名布局</button>
+                <button id="layout-reset">重置示例</button>
+                <button id="layout-download-json">导出 JSON</button>
+                <label class="file-button">
+                  导入 JSON
+                  <input id="layout-import-file" type="file" accept="application/json,.json">
+                </label>
+              </div>
+              <div class="form-grid-2">
+                <div class="form-row form-inline">
+                  <label>当前布局专用高度百分比（10..90，空为默认）</label>
+                  <input id="layout-height-override" type="number" min="10" max="90" step="1">
+                </div>
+              </div>
+            </details>
+
+            <details class="card">
+              <summary>二维码分享</summary>
+              <div>
+                <div class="form-row form-inline">
+                  <label>分享布局profile名（可选）</label>
+                  <input id="layout-profile" type="text" placeholder="default">
+                </div>
+                <div class="toolbar">
+                  <button id="layout-generate-qr">生成二维码</button>
+                  <button id="layout-share-qr-image">下载二维码长图</button>
+                </div>
+                <div id="layout-qr-meta" class="status"></div>
+                <div class="qr-wrap">
+                  <canvas id="layout-qr-canvas" width="640" height="640"></canvas>
+                  <div class="qr-nav">
+                    <button id="layout-prev-qr">上一张</button>
+                    <span id="layout-qr-index">0 / 0</span>
+                    <button id="layout-next-qr">下一张</button>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <details class="card json-card" id="layout-json-card">
+          <summary>JSON</summary>
+          <div class="json-card-body">
+            <textarea id="layout-json" class="json-editor"></textarea>
+            <div class="status" id="layout-json-status"></div>
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footnote">
+    <p><center>All rights reserved @ <a href="https://github.com/fxliang/f5a-see-me" target="_blank" rel="noopener noreferrer">fxliang/f5a-see-me</a></center></p>
+  </footer>
+
+  <dialog id="layout-add-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>新增</h3></div>
+      <div class="form-row">
+        <label>类型</label>
+        <select id="layout-add-kind">
+          <option value="layout">布局</option>
+          <option value="submode">子布局</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label id="layout-add-name-label">名称</label>
+        <input id="layout-add-name" type="text" autocomplete="off">
+      </div>
+      <div class="status" id="layout-add-prefix-preview" hidden></div>
+      <div class="form-row" id="layout-add-source-row">
+        <label>复制来源</label>
+        <select id="layout-add-source"></select>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="layout-add-dialog-cancel">取消</button>
+        <button type="button" id="layout-add-dialog-save">添加</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-dialog" class="editor-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar">
+        <h3 id="layout-key-dialog-title">编辑按键</h3>
+      </div>
+      <div class="form-row">
+        <label>按键类型</label>
+        <select id="layout-key-type"></select>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-row key-basic-main">
+          <label>主字符</label>
+          <input id="layout-key-main" type="text">
+        </div>
+        <div class="form-row key-basic-alt">
+          <label>副字符</label>
+          <input id="layout-key-alt" type="text">
+        </div>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-row key-basic-label">
+          <label>标签</label>
+          <input id="layout-key-label" type="text">
+        </div>
+        <div class="form-row key-basic-sublabel">
+          <label>子标签</label>
+          <input id="layout-key-sub-label" type="text">
+        </div>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-row key-basic-weight">
+          <label>权重宽度</label>
+          <input id="layout-key-weight" type="number" step="0.01" min="0" max="1">
+        </div>
+        <div class="form-row key-basic-row-height">
+          <label>行高百分比</label>
+          <input id="layout-key-row-height" type="number" step="0.1" min="1" max="100">
+        </div>
+      </div>
+      <div class="stack-actions">
+        <button type="button" id="layout-key-open-display-text">显示文本…</button>
+        <button type="button" id="layout-key-open-labels">标签…</button>
+        <button type="button" id="layout-key-open-macro">事件…</button>
+        <button type="button" id="layout-key-open-colors">按键颜色…</button>
+        <button type="button" id="layout-key-open-compose">编辑合成中按键</button>
+        <button type="button" id="layout-key-open-json">完整 JSON…</button>
+      </div>
+      <div id="layout-key-compose-inline" class="form-row" hidden>
+        <label><input id="layout-key-compose-independent" type="checkbox"> 独立按键颜色</label>
+        <div id="layout-key-compose-nested-summary" class="status"></div>
+      </div>
+      <div class="sub-edit-summary">
+        <div id="layout-key-display-text-summary" class="status"></div>
+        <div id="layout-key-labels-summary" class="status"></div>
+        <div id="layout-key-macro-summary" class="status"></div>
+        <div id="layout-key-color-summary" class="status"></div>
+        <div id="layout-key-compose-summary" class="status"></div>
+      </div>
+      <div class="status" id="layout-key-dialog-status"></div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-cancel">取消</button>
+        <button type="button" id="layout-key-save">保存</button>
+        <button type="button" id="layout-key-compose-clear" hidden>清除合成按键</button>
+        <button type="button" id="layout-key-delete" title="删除按键">删除按键</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-display-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>编辑显示文本</h3></div>
+      <div class="form-row">
+        <label>模式</label>
+        <select id="layout-key-display-mode">
+          <option value="simple">显示文本</option>
+          <option value="mapping">添加模式</option>
+        </select>
+      </div>
+      <div class="form-row" id="layout-key-display-simple-wrap">
+        <label>显示文本</label>
+        <input id="layout-key-display-simple" type="text">
+      </div>
+      <div id="layout-key-display-map-wrap" hidden>
+        <div id="layout-key-display-map-rows"></div>
+        <div class="toolbar"><button type="button" id="layout-key-display-map-add">添加模式</button></div>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-display-cancel">取消</button>
+        <button type="button" id="layout-key-display-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-labels-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>编辑标签</h3></div>
+      <div class="form-row">
+        <label>划动标签</label>
+        <input id="layout-key-labels-swipe" type="text">
+      </div>
+      <div class="form-row">
+        <label>副标签</label>
+        <input id="layout-key-labels-alt" type="text">
+      </div>
+      <div class="form-row">
+        <label>长按标签</label>
+        <input id="layout-key-labels-long-press" type="text">
+      </div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-labels-cancel">取消</button>
+        <button type="button" id="layout-key-labels-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-macro-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>编辑事件</h3></div>
+      <div class="form-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-tap">点击事件…</button>
+          <button type="button" id="layout-key-macro-clear-tap">清空</button>
+        </div>
+        <div id="layout-key-macro-tap-summary" class="status"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-swipe">划动事件…</button>
+          <button type="button" id="layout-key-macro-clear-swipe">清空</button>
+        </div>
+        <div id="layout-key-macro-swipe-summary" class="status"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-long-press">长按事件…</button>
+          <button type="button" id="layout-key-macro-clear-long-press">清空</button>
+        </div>
+        <div id="layout-key-macro-long-press-summary" class="status"></div>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-macro-cancel">取消</button>
+        <button type="button" id="layout-key-macro-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-colors-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>按键颜色</h3></div>
+      <div id="layout-key-colors-rows"></div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-colors-cancel">取消</button>
+        <button type="button" id="layout-key-colors-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-macro-event-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3 id="layout-key-macro-event-title">编辑事件步骤</h3></div>
+      <div id="layout-key-macro-event-steps"></div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-macro-event-add-step">+ 添加步骤</button>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-macro-event-cancel">取消</button>
+        <button type="button" id="layout-key-macro-event-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-key-json-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>编辑完整 JSON</h3></div>
+      <div class="form-row">
+        <textarea id="layout-key-json" class="json-editor small"></textarea>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="layout-key-json-cancel">取消</button>
+        <button type="button" id="layout-key-json-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lzma-wasm@1.0.7/dist/iife/index.js"></script>
+  <script src="./jscolor/jscolor.js?v=20260516-1032"></script>
+  <script src="./app.js?v=20260516-1348"></script>
+</body>
+</html>
