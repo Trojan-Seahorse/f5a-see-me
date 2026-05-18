@@ -320,7 +320,7 @@
 
   async function initializeBuiltinData() {
     try {
-      const layout = normalizeLayoutObject(await tryLoadJson("./data/default-layout.json"));
+      const layout = normalizeLayoutObject(await tryLoadJson("../data/default-layout.json"));
       state.layout = deepClone(layout);
       state.initialLayout = deepClone(layout);
     } catch (_) {
