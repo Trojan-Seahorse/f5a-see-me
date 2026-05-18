@@ -510,6 +510,10 @@ input[type="checkbox"] {
   justify-items: start;
 }
 
+.qr-wrap[hidden] {
+  display: none !important;
+}
+
 .qr-wrap canvas {
   width: min(100%, 360px);
   height: auto;

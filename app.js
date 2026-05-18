@@ -157,7 +157,7 @@
     selectedSubmode: DEFAULT_SUBMODE,
     suppressLayoutJsonInput: false,
     wasmReady: false,
-    qr: { chunks: [], index: 0, transferId: "" },
+    qr: { chunks: [], index: 0, transferId: "", layoutSignature: "" },
     qrImportRunning: false,
     dragKey: null,
     dragRow: null,
@@ -194,6 +194,14 @@
 
   function prettyJson(v) {
     return JSON.stringify(v, null, 2);
+  }
+
+  function currentLayoutSignature() {
+    try {
+      return JSON.stringify(normalizeLayoutObject(deepClone(state.layout)));
+    } catch (_) {
+      return "";
+    }
   }
 
   function exportJsonOneKeyPerLine(v) {
@@ -2567,6 +2575,7 @@
       renderLayoutEditor();
       renderLayoutPreview();
       syncLayoutJsonFromState();
+      updateQrUi();
     } catch (e) {
       setStatus("layout-json-status", `布局错误：${e.message}`, "err");
     }
@@ -3217,7 +3226,7 @@
 
   async function importLayoutFromQrLongImage(file) {
     if (!file) return;
-    state.qr = { chunks: [], index: 0, transferId: "" };
+    state.qr = { chunks: [], index: 0, transferId: "", layoutSignature: "" };
     updateQrUi();
     setStatus("layout-qr-meta", "正在读取长图…", "");
     const image = await readFileAsImage(file);
@@ -3230,6 +3239,7 @@
     if (!ok) return;
 
     state.layout = decoded.layout;
+    state.qr = { chunks: [], index: 0, transferId: "", layoutSignature: "" };
     ensureSelection();
     syncLayoutUiFromState();
     setStatus("layout-json-status", "已从二维码长图导入 JSON", "ok");
@@ -3237,22 +3247,28 @@
   }
 
   function updateQrUi() {
+    const isStale = state.qr.layoutSignature && state.qr.layoutSignature !== currentLayoutSignature();
+    if (isStale) state.qr = { chunks: [], index: 0, transferId: "", layoutSignature: "" };
     const has = state.qr.chunks.length > 0;
-    el("layout-qr-index").textContent = `${has ? state.qr.index + 1 : 0} / ${state.qr.chunks.length}`;
-    if (has) {
-      const canvas = el("layout-qr-canvas");
-      const filled = makeQrCanvas(state.qr.chunks[state.qr.index], canvas.width);
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(filled, 0, 0);
+    const wrap = el("layout-qr-wrap");
+    if (wrap) {
+      wrap.hidden = !has;
+      wrap.style.display = has ? "" : "none";
     }
+    el("layout-qr-index").textContent = `${has ? state.qr.index + 1 : 0} / ${state.qr.chunks.length}`;
+    const canvas = el("layout-qr-canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!has) return;
+    const filled = makeQrCanvas(state.qr.chunks[state.qr.index], canvas.width);
+    ctx.drawImage(filled, 0, 0);
   }
 
   function setupQrActions() {
     el("layout-generate-qr").addEventListener("click", async () => {
       try {
         const bundle = await generateLayoutQrBundle();
-        state.qr = { chunks: bundle.chunks, index: 0, transferId: bundle.transferId };
+        state.qr = { chunks: bundle.chunks, index: 0, transferId: bundle.transferId, layoutSignature: currentLayoutSignature() };
         setStatus("layout-qr-meta", `布局二维码：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
         updateQrUi();
       } catch (e) {
@@ -3262,7 +3278,7 @@
     el("layout-share-qr-image").addEventListener("click", async () => {
       try {
         const bundle = await generateLayoutQrBundle();
-        state.qr = { chunks: bundle.chunks, index: 0, transferId: bundle.transferId };
+        state.qr = { chunks: bundle.chunks, index: 0, transferId: bundle.transferId, layoutSignature: currentLayoutSignature() };
         updateQrUi();
         await downloadQrLongImage(bundle, bundle.profile);
         setStatus("layout-qr-meta", `已下载 PNG 长图：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
