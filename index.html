@@ -28,6 +28,7 @@
     <div class="tabs" role="tablist" aria-label="编辑器功能">
       <button type="button" class="tab active" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true">布局编辑</button>
       <button type="button" class="tab" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false">主题编辑</button>
+      <button type="button" class="tab" data-tab-target="tab-popup" aria-controls="tab-popup" aria-selected="false">弹出字符</button>
     </div>
 
     <section class="panel active" id="tab-layout" role="tabpanel">
@@ -130,10 +131,35 @@
           <summary>主题 JSON</summary>
           <div class="json-card-body">
             <textarea id="theme-json" class="json-editor"></textarea>
-            <div class="toolbar">
-              <button id="theme-json-apply" type="button">应用 JSON 到当前主题</button>
-            </div>
             <div id="theme-json-status" class="status"></div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-popup" role="tabpanel">
+      <div class="layout-workbench popup-workbench">
+        <details class="card popup-main-card" open>
+          <summary>弹出字符编辑</summary>
+          <div class="toolbar details-toolbar">
+            <button id="popup-add-mapping" type="button">新增映射</button>
+            <button id="popup-export-json" type="button">导出 JSON</button>
+            <button id="popup-import-json" type="button">导入 JSON</button>
+            <button id="popup-generate-qr" type="button">生成二维码</button>
+            <button id="popup-import-qr-image" type="button">导入二维码长图</button>
+            <input id="popup-import-file" type="file" accept="application/json,.json" hidden>
+            <input id="popup-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
+          <div id="popup-qr-meta" class="status"></div>
+          <div id="popup-editor-status" class="status"></div>
+          <div id="popup-entry-list" class="popup-entry-list"></div>
+        </details>
+
+        <details class="card json-card" id="popup-json-card" open>
+          <summary>弹出字符 JSON</summary>
+          <div class="json-card-body">
+            <textarea id="popup-json" class="json-editor"></textarea>
+            <div id="popup-json-status" class="status"></div>
           </div>
         </details>
       </div>
@@ -370,6 +396,22 @@
     </form>
   </dialog>
 
+  <dialog id="popup-qr-dialog" class="editor-dialog sub-dialog qr-preview-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>弹出字符二维码预览</h3></div>
+      <div class="qr-wrap qr-wrap-modal">
+        <canvas id="popup-qr-canvas" width="640" height="640"></canvas>
+        <div class="qr-nav">
+          <button id="popup-prev-qr" type="button">上一张</button>
+          <span id="popup-qr-index">0 / 0</span>
+          <button id="popup-next-qr" type="button">下一张</button>
+          <button id="popup-download-qr-preview" type="button">下载长图</button>
+          <button id="popup-close-qr-preview" type="submit">关闭</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lzma-wasm@1.0.7/dist/iife/index.js"></script>
@@ -377,6 +419,6 @@
   <script src="./js/qr-import.js?v=20260518215754"></script>
   <script src="./js/jscolor/jscolor.js?v=20260516-1032"></script>
   <script src="./js/key-editor-bindings.js?v=20260518215754"></script>
-  <script src="./js/app.js?v=20260518224603"></script>
+  <script src="./js/app.js?v=20260519002200"></script>
 </body>
 </html>

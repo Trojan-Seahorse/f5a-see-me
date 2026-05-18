@@ -1,12 +1,13 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-18T22:46+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-19T00:22+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
   const MAX_CHUNK_BYTES = 1500;
   const TRANSFER_TYPE_LAYOUT = "L";
   const TRANSFER_TYPE_THEME = "T";
+  const TRANSFER_TYPE_POPUP = "P";
   const LONG_IMAGE_QR_SIZE = 768;
   const LONG_IMAGE_PAGE_PADDING = 24;
   const LONG_IMAGE_TEXT_SIZE = 22;
@@ -293,6 +294,8 @@
   const state = {
     layout: deepClone(defaultLayout),
     initialLayout: deepClone(defaultLayout),
+    popupEntries: {},
+    initialPopupEntries: {},
     themeCatalog: createBuiltinThemeCatalog(),
     selectedThemeId: `builtin-${defaultThemePresetName}`,
     activeTab: "tab-layout",
@@ -304,6 +307,7 @@
     themeQr: { chunks: [], index: 0, transferId: "", themeSignature: "" },
     qrImportRunning: false,
     themeImportRunning: false,
+    popupImportRunning: false,
     themeAssetUrlByPath: new Map(),
     dragKey: null,
     dragRow: null,
@@ -313,14 +317,19 @@
     layoutJsonEditorLoading: false,
     themeJsonEditor: null,
     themeJsonEditorLoading: false,
+    popupJsonEditor: null,
+    popupJsonEditorLoading: false,
     suppressThemeJsonInput: false,
+    suppressPopupJsonInput: false,
     layoutKeyJsonEditor: null,
     layoutKeyJsonEditorLoading: false,
     codeMirrorModulesPromise: null,
     lastJsonCardHeight: 0,
     lastThemeJsonCardHeight: 0,
+    lastPopupJsonCardHeight: 0,
     layoutHeightObserver: null,
     themeHeightObserver: null,
+    popupHeightObserver: null,
     composeNestedContext: null,
     macroStepDrag: null,
     macroStepDragPointerId: null,
@@ -329,7 +338,8 @@
     macroStepDragActive: false,
     macroStepDragStartX: 0,
     macroStepDragStartY: 0,
-    macroEventEditor: { eventName: "tap", steps: [] }
+    macroEventEditor: { eventName: "tap", steps: [] },
+    popupQr: { chunks: [], index: 0, transferId: "", popupSignature: "" }
   };
 
   const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null };
@@ -358,6 +368,14 @@
   function currentThemeSignature() {
     try {
       return JSON.stringify(serializeCurrentTheme());
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function currentPopupSignature() {
+    try {
+      return JSON.stringify(serializePopupEntries());
     } catch (_) {
       return "";
     }
@@ -717,6 +735,253 @@
     rightRoot.innerHTML = parts.slice(4, 8).join("");
   }
 
+  function normalizePopupEntries(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    Object.entries(raw).forEach(([rawKey, rawValues]) => {
+      const key = String(rawKey ?? "").trim();
+      if (!key) return;
+      if (!Array.isArray(rawValues)) throw new Error(`映射 ${key} 的值必须是数组`);
+      const values = rawValues
+        .map((item) => String(item ?? "").trim())
+        .filter((item) => item.length > 0);
+      if (!values.length) return;
+      out[key] = values;
+    });
+    return Object.fromEntries(
+      Object.entries(out).sort(([a], [b]) => a.localeCompare(b))
+    );
+  }
+
+  function serializePopupEntries() {
+    return deepClone(normalizePopupEntries(state.popupEntries));
+  }
+
+  function stringifyPopupEntriesForEditor(entries) {
+    const normalized = normalizePopupEntries(entries);
+    const list = Object.entries(normalized);
+    if (!list.length) return "{}";
+    const lines = ["{"];
+    list.forEach(([key, values], index) => {
+      const comma = index < list.length - 1 ? "," : "";
+      const serializedValues = values.map((value) => JSON.stringify(value)).join(", ");
+      lines.push(`  ${JSON.stringify(key)}: [${serializedValues}]${comma}`);
+    });
+    lines.push("}");
+    return lines.join("\n");
+  }
+
+  function popupHasChanges() {
+    return JSON.stringify(serializePopupEntries()) !== JSON.stringify(normalizePopupEntries(state.initialPopupEntries));
+  }
+
+  function getPopupJsonText() {
+    return state.popupJsonEditor?.state.doc.toString() ?? (el("popup-json")?.value ?? "");
+  }
+
+  function setPopupJsonText(text) {
+    const editor = state.popupJsonEditor;
+    if (editor) {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: text }
+      });
+      return;
+    }
+    const textarea = el("popup-json");
+    if (textarea) textarea.value = text;
+  }
+
+  function syncPopupJsonFromState() {
+    state.suppressPopupJsonInput = true;
+    setPopupJsonText(`${stringifyPopupEntriesForEditor(serializePopupEntries())}\n`);
+    state.suppressPopupJsonInput = false;
+    setStatus("popup-json-status", "JSON 已同步", "ok");
+    updatePopupQrUi();
+  }
+
+  function applyPopupJsonEditorInput() {
+    if (state.suppressPopupJsonInput) return;
+    try {
+      const parsed = normalizePopupEntries(JSON.parse(getPopupJsonText() || "{}"));
+      state.popupEntries = parsed;
+      renderPopupEditor();
+      updatePopupQrUi();
+      setStatus("popup-json-status", `JSON 合法，已实时应用（${Object.keys(parsed).length} 条映射）`, "ok");
+    } catch (e) {
+      setStatus("popup-json-status", `JSON 无效：${e.message}`, "err");
+    }
+  }
+
+  function renderPopupEditor() {
+    const root = el("popup-entry-list");
+    if (!root) return;
+    const entries = Object.entries(serializePopupEntries());
+    if (!entries.length) {
+      root.innerHTML = `<div class="status">暂无弹出字符映射，点击“新增映射”开始编辑</div>`;
+      return;
+    }
+    root.innerHTML = "";
+    entries.forEach(([key, values]) => {
+      const row = document.createElement("div");
+      row.className = "popup-entry-row";
+      row.innerHTML = `
+        <button type="button" class="popup-entry-key" data-action="rename">${escapeHtml(key)}</button>
+        <div class="popup-entry-values"></div>
+        <button type="button" class="popup-entry-delete" data-action="delete">删除映射</button>
+      `;
+      const valuesWrap = row.querySelector(".popup-entry-values");
+      values.forEach((value, index) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "popup-chip";
+        chip.textContent = value;
+        chip.title = "点击编辑，右键删除";
+        chip.addEventListener("click", () => {
+          const next = prompt(`编辑「${key}」的候选字符`, value);
+          if (next == null) return;
+          const normalized = next.trim();
+          if (!normalized) return;
+          state.popupEntries[key][index] = normalized;
+          state.popupEntries = normalizePopupEntries(state.popupEntries);
+          renderPopupEditor();
+          syncPopupJsonFromState();
+          setStatus("popup-editor-status", `已更新 ${key} 的候选字符`, "ok");
+        });
+        chip.addEventListener("contextmenu", (ev) => {
+          ev.preventDefault();
+          if (!confirm(`删除候选字符「${value}」？`)) return;
+          state.popupEntries[key].splice(index, 1);
+          if (!state.popupEntries[key].length) delete state.popupEntries[key];
+          state.popupEntries = normalizePopupEntries(state.popupEntries);
+          renderPopupEditor();
+          syncPopupJsonFromState();
+          setStatus("popup-editor-status", `已删除 ${key} 的候选字符`, "ok");
+        });
+        valuesWrap.appendChild(chip);
+      });
+      const addChip = document.createElement("button");
+      addChip.type = "button";
+      addChip.className = "popup-chip popup-chip-add";
+      addChip.textContent = "+ 候选";
+      addChip.addEventListener("click", () => {
+        const next = prompt(`添加「${key}」的候选字符`);
+        if (next == null) return;
+        const normalized = next.trim();
+        if (!normalized) return;
+        state.popupEntries[key].push(normalized);
+        state.popupEntries = normalizePopupEntries(state.popupEntries);
+        renderPopupEditor();
+        syncPopupJsonFromState();
+        setStatus("popup-editor-status", `已添加 ${key} 的候选字符`, "ok");
+      });
+      valuesWrap.appendChild(addChip);
+      row.querySelector('[data-action="rename"]').addEventListener("click", () => {
+        const next = prompt("编辑映射键名", key);
+        if (next == null) return;
+        const normalized = next.trim();
+        if (!normalized || normalized === key) return;
+        if (Object.prototype.hasOwnProperty.call(state.popupEntries, normalized)) {
+          setStatus("popup-editor-status", `键名已存在：${normalized}`, "err");
+          return;
+        }
+        const copy = state.popupEntries[key].slice();
+        delete state.popupEntries[key];
+        state.popupEntries[normalized] = copy;
+        state.popupEntries = normalizePopupEntries(state.popupEntries);
+        renderPopupEditor();
+        syncPopupJsonFromState();
+        setStatus("popup-editor-status", `已重命名映射：${key} → ${normalized}`, "ok");
+      });
+      row.querySelector('[data-action="delete"]').addEventListener("click", () => {
+        if (!confirm(`删除映射「${key}」？`)) return;
+        delete state.popupEntries[key];
+        state.popupEntries = normalizePopupEntries(state.popupEntries);
+        renderPopupEditor();
+        syncPopupJsonFromState();
+        setStatus("popup-editor-status", `已删除映射：${key}`, "ok");
+      });
+      root.appendChild(row);
+    });
+    syncPopupJsonHeight();
+  }
+
+  function initPopupTab() {
+    el("popup-add-mapping").addEventListener("click", () => {
+      const key = prompt("输入映射键名（例如 a）");
+      if (key == null) return;
+      const normalizedKey = key.trim();
+      if (!normalizedKey) {
+        setStatus("popup-editor-status", "映射键名不能为空", "err");
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(state.popupEntries, normalizedKey)) {
+        setStatus("popup-editor-status", `键名已存在：${normalizedKey}`, "err");
+        return;
+      }
+      const firstValue = prompt(`输入「${normalizedKey}」的首个候选字符`);
+      if (firstValue == null) return;
+      const normalizedValue = firstValue.trim();
+      if (!normalizedValue) {
+        setStatus("popup-editor-status", "候选字符不能为空", "err");
+        return;
+      }
+      state.popupEntries[normalizedKey] = [normalizedValue];
+      state.popupEntries = normalizePopupEntries(state.popupEntries);
+      renderPopupEditor();
+      syncPopupJsonFromState();
+      setStatus("popup-editor-status", `已新增映射：${normalizedKey}`, "ok");
+    });
+    el("popup-export-json").addEventListener("click", () => {
+      downloadFile("PopupPreset.json", `${prettyJson(serializePopupEntries())}\n`);
+      setStatus("popup-editor-status", "已导出弹出字符 JSON", "ok");
+    });
+    el("popup-import-json").addEventListener("click", () => {
+      const input = el("popup-import-file");
+      if (!input) return;
+      input.value = "";
+      input.click();
+    });
+    el("popup-import-file").addEventListener("change", async (ev) => {
+      const file = ev.target.files?.[0];
+      if (!file) return;
+      try {
+        const parsed = normalizePopupEntries(JSON.parse(await file.text()));
+        state.popupEntries = parsed;
+        renderPopupEditor();
+        syncPopupJsonFromState();
+        setStatus("popup-editor-status", `已导入 ${Object.keys(parsed).length} 条映射`, "ok");
+      } catch (e) {
+        setStatus("popup-editor-status", `导入失败：${e.message}`, "err");
+      } finally {
+        ev.target.value = "";
+      }
+    });
+    const popupJsonCard = el("popup-json-card");
+    if (popupJsonCard) {
+      popupJsonCard.open = true;
+      if (!state.popupJsonEditor) {
+        initPopupJsonEditor().then(() => syncPopupJsonHeight());
+      } else {
+        syncPopupJsonHeight();
+      }
+      popupJsonCard.addEventListener("toggle", () => {
+        if (!popupJsonCard.open) {
+          syncPopupJsonHeight();
+          return;
+        }
+        if (!state.popupJsonEditor) {
+          initPopupJsonEditor().then(() => syncPopupJsonHeight());
+        } else {
+          syncPopupJsonHeight();
+        }
+      });
+    }
+    renderPopupEditor();
+    syncPopupJsonFromState();
+    syncPopupJsonHeight();
+    setStatus("popup-editor-status", popupHasChanges() ? "弹出字符映射已修改" : "", "");
+  }
+
   function setActiveTab(targetId) {
     const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
     state.activeTab = targetId;
@@ -731,6 +996,12 @@
     updateFixedChromeMetrics();
     syncJsonEditorHeight();
     syncThemeJsonHeight();
+    syncPopupJsonHeight();
+    if (targetId === "tab-popup") {
+      renderPopupEditor();
+      syncPopupJsonFromState();
+      updatePopupQrUi();
+    }
   }
 
   function initTabs() {
@@ -745,8 +1016,6 @@
     const theme = currentThemeEntry();
     const editable = !!theme && !theme.builtin;
     setThemeJsonEditable(editable);
-    const applyBtn = el("theme-json-apply");
-    if (applyBtn) applyBtn.disabled = !editable;
     const rows = el("theme-color-rows");
     if (!rows) return;
     rows.hidden = !editable;
@@ -958,37 +1227,6 @@
         if (input) input.value = "";
       }
     });
-    el("theme-json-apply").addEventListener("click", () => {
-      const theme = currentThemeEntry();
-      if (!theme || theme.builtin) {
-        setStatus("theme-json-status", "内置主题不可直接编辑，请先复制为自定义主题", "err");
-        return;
-      }
-      try {
-        const parsed = JSON.parse(getThemeJsonText() || "{}");
-        const candidateColors = parsed.colors && typeof parsed.colors === "object" ? parsed.colors : parsed;
-        theme.colors = normalizeThemeColors(candidateColors);
-        if (typeof parsed.name === "string" && parsed.name.trim()) {
-          renameThemeAndSyncAssets(theme, parsed.name.trim());
-        }
-        if (typeof parsed.isDark === "boolean") theme.isDark = parsed.isDark;
-        if (typeof parsed.backgroundImage === "string") {
-          theme.backgroundImage = parsed.backgroundImage;
-          theme.backgroundImageObject = null;
-        } else if (parsed.backgroundImage && typeof parsed.backgroundImage === "object") {
-          const bgSpec = normalizeThemeBackgroundImageObject(parsed.backgroundImage);
-          theme.backgroundImageObject = bgSpec;
-          theme.backgroundImage = resolveThemeAssetUrl(bgSpec);
-        }
-        renderThemeList();
-        renderThemeEditor();
-        syncThemeJsonFromState();
-        syncLayoutUiFromState();
-        setStatus("theme-json-status", "主题 JSON 已应用", "ok");
-      } catch (e) {
-        setStatus("theme-json-status", `JSON 无效：${e.message}`, "err");
-      }
-    });
     if (!state.themeCatalog.find((item) => item.id === state.selectedThemeId)) {
       state.selectedThemeId = state.themeCatalog[0]?.id || "";
     }
@@ -1106,12 +1344,20 @@
 
   async function initializeBuiltinData() {
     try {
-      const layout = normalizeLayoutObject(await tryLoadJson("../data/default-layout.json"));
+      const layout = normalizeLayoutObject(await tryLoadJson("./data/default-layout.json"));
       state.layout = deepClone(layout);
       state.initialLayout = deepClone(layout);
     } catch (_) {
       state.layout = deepClone(defaultLayout);
       state.initialLayout = deepClone(defaultLayout);
+    }
+    try {
+      const popupPreset = normalizePopupEntries(await tryLoadJson("./data/default-popup-preset.json"));
+      state.popupEntries = popupPreset;
+      state.initialPopupEntries = deepClone(state.popupEntries);
+    } catch (_) {
+      state.popupEntries = {};
+      state.initialPopupEntries = {};
     }
     ensureSelection();
   }
@@ -3521,6 +3767,67 @@
     }
   }
 
+  function syncPopupJsonHeight() {
+    if (state.activeTab !== "tab-popup") return;
+    const jsonCard = el("popup-json-card");
+    if (!jsonCard) return;
+    if (!jsonCard.open) return;
+    const mainCard = document.querySelector(".popup-main-card");
+    let referenceCardHeight = Math.round(jsonCard.getBoundingClientRect().height || 0);
+    if (mainCard) {
+      const style = getComputedStyle(mainCard);
+      const border =
+        (Number.parseFloat(style.borderTopWidth || "0") || 0) +
+        (Number.parseFloat(style.borderBottomWidth || "0") || 0);
+      const scrollHeight = Math.round(mainCard.scrollHeight + border);
+      const mainRectHeight = Math.round(mainCard.getBoundingClientRect().height || 0);
+      referenceCardHeight = scrollHeight > 0 ? scrollHeight : (mainRectHeight > 0 ? mainRectHeight : referenceCardHeight);
+      state.lastPopupJsonCardHeight = referenceCardHeight;
+    }
+    const summary = jsonCard.querySelector("summary");
+    const status = el("popup-json-status");
+    const toolbar = jsonCard.querySelector(".toolbar");
+    const cardStyle = getComputedStyle(jsonCard);
+    const cardVerticalPadding =
+      (Number.parseFloat(cardStyle.paddingTop || "0") || 0) +
+      (Number.parseFloat(cardStyle.paddingBottom || "0") || 0);
+    const height = Math.max(
+      200,
+      Math.floor(
+        referenceCardHeight -
+        cardVerticalPadding -
+        (summary?.offsetHeight || 0) -
+        (status?.offsetHeight || 0) -
+        (toolbar?.offsetHeight || 0) -
+        24
+      )
+    );
+    const editor = state.popupJsonEditor;
+    if (editor) {
+      editor.dom.style.height = `${height}px`;
+      editor.dom.style.maxHeight = `${height}px`;
+      editor.dom.style.minHeight = "0";
+      editor.dom.style.width = "100%";
+      const scroller = editor.dom.querySelector(".cm-scroller");
+      if (scroller) {
+        scroller.style.height = `${height}px`;
+        scroller.style.maxHeight = `${height}px`;
+        scroller.style.minHeight = "0";
+        scroller.style.overflow = "auto";
+      }
+      editor.requestMeasure();
+      return;
+    }
+    const textarea = el("popup-json");
+    if (textarea) {
+      textarea.style.height = `${height}px`;
+      textarea.style.maxHeight = `${height}px`;
+      textarea.style.minHeight = "0";
+      textarea.style.width = "100%";
+      textarea.style.overflow = "auto";
+    }
+  }
+
   function getThemeJsonText() {
     return state.themeJsonEditor?.state.doc.toString() ?? el("theme-json").value;
   }
@@ -3550,9 +3857,32 @@
 
   function applyThemeJsonEditorInput() {
     if (state.suppressThemeJsonInput) return;
+    const theme = currentThemeEntry();
+    if (!theme || theme.builtin) {
+      setStatus("theme-json-status", "内置主题不可直接编辑，请先复制为自定义主题", "err");
+      return;
+    }
     try {
-      JSON.parse(getThemeJsonText() || "{}");
-      setStatus("theme-json-status", "JSON 合法，可点击“应用 JSON 到当前主题”", "ok");
+      const parsed = JSON.parse(getThemeJsonText() || "{}");
+      const candidateColors = parsed.colors && typeof parsed.colors === "object" ? parsed.colors : parsed;
+      theme.colors = normalizeThemeColors(candidateColors);
+      if (typeof parsed.name === "string" && parsed.name.trim()) {
+        renameThemeAndSyncAssets(theme, parsed.name.trim());
+      }
+      if (typeof parsed.isDark === "boolean") theme.isDark = parsed.isDark;
+      if (typeof parsed.backgroundImage === "string") {
+        theme.backgroundImage = parsed.backgroundImage;
+        theme.backgroundImageObject = null;
+      } else if (parsed.backgroundImage && typeof parsed.backgroundImage === "object") {
+        const bgSpec = normalizeThemeBackgroundImageObject(parsed.backgroundImage);
+        theme.backgroundImageObject = bgSpec;
+        theme.backgroundImage = resolveThemeAssetUrl(bgSpec);
+      }
+      renderThemeList();
+      renderThemeEditor();
+      renderThemeSupplementPreview();
+      syncLayoutUiFromState();
+      setStatus("theme-json-status", "JSON 合法，已实时应用到当前主题", "ok");
     } catch (e) {
       setStatus("theme-json-status", `JSON 无效：${e.message}`, "err");
     }
@@ -3634,6 +3964,38 @@
       syncThemeJsonHeight();
     } finally {
       state.themeJsonEditorLoading = false;
+    }
+  }
+
+  async function initPopupJsonEditor() {
+    if (state.popupJsonEditor || state.popupJsonEditorLoading) return;
+    state.popupJsonEditorLoading = true;
+    const textarea = el("popup-json");
+    textarea.addEventListener("input", applyPopupJsonEditorInput);
+    try {
+      const { EditorView, basicSetup, json, oneDark } = await loadCodeMirrorModules();
+      const updateListener = EditorView.updateListener.of((update) => {
+        if (update.docChanged) applyPopupJsonEditorInput();
+      });
+      const editor = new EditorView({
+        doc: textarea.value,
+        extensions: [
+          basicSetup,
+          json(),
+          oneDark,
+          updateListener,
+          EditorView.lineWrapping
+        ]
+      });
+      textarea.classList.add("json-editor-fallback");
+      textarea.after(editor.dom);
+      state.popupJsonEditor = editor;
+      syncPopupJsonHeight();
+    } catch (e) {
+      console.warn("CodeMirror failed to load, using textarea fallback", e);
+      syncPopupJsonHeight();
+    } finally {
+      state.popupJsonEditorLoading = false;
     }
   }
 
@@ -3943,6 +4305,15 @@
     return await encodeJsonToChunks(payload.json, null, TRANSFER_TYPE_THEME);
   }
 
+  function currentPopupQrPayload() {
+    return { json: `${prettyJson(serializePopupEntries())}\n` };
+  }
+
+  async function generatePopupQrBundle() {
+    const payload = currentPopupQrPayload();
+    return await encodeJsonToChunks(payload.json, null, TRANSFER_TYPE_POPUP);
+  }
+
   function displayProfile(profile) {
     return (profile || "").trim() || "default";
   }
@@ -3959,7 +4330,11 @@
   }
 
   function buildChunkLabels(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
-    const label = transferType === TRANSFER_TYPE_THEME ? "Theme" : "Layout";
+    const label = transferType === TRANSFER_TYPE_THEME
+      ? "Theme"
+      : transferType === TRANSFER_TYPE_POPUP
+        ? "Popup"
+        : "Layout";
     const profilePart = transferType === TRANSFER_TYPE_LAYOUT ? ` · ${displayProfile(profile)}` : "";
     return bundle.chunks.map((_, i) => `${label}${profilePart} · Chunk ${i + 1}/${bundle.total} · ${bundle.transferId}`);
   }
@@ -4161,7 +4536,11 @@
   async function downloadQrLongImage(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
     const canvas = composeQrLongImage(bundle, profile, transferType);
     const blob = await canvasToPngBlob(canvas);
-    const prefix = transferType === TRANSFER_TYPE_THEME ? "text-keyboard-theme-qr" : "text-keyboard-layout-qr";
+    const prefix = transferType === TRANSFER_TYPE_THEME
+      ? "text-keyboard-theme-qr"
+      : transferType === TRANSFER_TYPE_POPUP
+        ? "popup-preset-qr"
+        : "text-keyboard-layout-qr";
     const fileName = `${prefix}-${Date.now()}.png`;
     downloadBlob(fileName, blob);
   }
@@ -4331,6 +4710,12 @@
     }
     const themeData = normalizeImportedThemePayload(raw);
     return { themeData, transferId: decoded.transferId, total: decoded.total };
+  }
+
+  async function decodePopupFromQrChunks(chunkTexts) {
+    const decoded = await decodeQrChunksToJson(chunkTexts, TRANSFER_TYPE_POPUP);
+    const popupEntries = normalizePopupEntries(JSON.parse(decoded.text));
+    return { popupEntries, transferId: decoded.transferId, total: decoded.total };
   }
 
   function inferMimeTypeByName(name) {
@@ -4514,6 +4899,27 @@
     setStatus("theme-qr-meta", `导入成功：${imported.name}（${decoded.total} 个分片）`, "ok");
   }
 
+  async function importPopupFromQrLongImage(file) {
+    if (!file) return;
+    state.popupQr = { chunks: [], index: 0, transferId: "", popupSignature: "" };
+    updatePopupQrUi();
+    setStatus("popup-qr-meta", "正在读取弹出字符二维码长图…", "");
+    const image = await readFileAsImage(file);
+    const chunkTexts = await decodeQrTextFromImage(image, (msg) => setStatus("popup-qr-meta", msg, ""));
+    if (!chunkTexts.length) throw new Error("未识别到有效二维码分片，请确认长图完整清晰");
+    setStatus("popup-qr-meta", "正在校验并解码弹出字符分片…", "");
+    const decoded = await decodePopupFromQrChunks(chunkTexts);
+    const ok = confirm(`确认导入弹出字符映射？\ntransferId=${decoded.transferId}\n分片数=${decoded.total}\n当前映射将被覆盖。`);
+    if (!ok) return;
+    state.popupEntries = decoded.popupEntries;
+    renderPopupEditor();
+    syncPopupJsonFromState();
+    state.popupQr = { chunks: [], index: 0, transferId: "", popupSignature: "" };
+    updatePopupQrUi();
+    setStatus("popup-editor-status", `已导入 ${Object.keys(decoded.popupEntries).length} 条映射`, "ok");
+    setStatus("popup-qr-meta", `导入成功：${decoded.total} 个分片，transferId=${decoded.transferId}`, "ok");
+  }
+
   async function importLayoutFromQrLongImage(file) {
     if (!file) return;
     state.qr = { chunks: [], index: 0, transferId: "", layoutSignature: "" };
@@ -4570,8 +4976,29 @@
     ctx.drawImage(filled, 0, 0);
   }
 
+  function updatePopupQrUi() {
+    const isStale = state.popupQr.popupSignature && state.popupQr.popupSignature !== currentPopupSignature();
+    if (isStale) state.popupQr = { chunks: [], index: 0, transferId: "", popupSignature: "" };
+    const has = state.popupQr.chunks.length > 0;
+    const idx = el("popup-qr-index");
+    if (idx) idx.textContent = `${has ? state.popupQr.index + 1 : 0} / ${state.popupQr.chunks.length}`;
+    const canvas = el("popup-qr-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!has) return;
+    const filled = makeQrCanvas(state.popupQr.chunks[state.popupQr.index], canvas.width);
+    ctx.drawImage(filled, 0, 0);
+  }
+
   function openThemeQrPreviewDialog() {
     const dialog = el("theme-qr-dialog");
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function openPopupQrPreviewDialog() {
+    const dialog = el("popup-qr-dialog");
     if (!dialog) return;
     if (!dialog.open) dialog.showModal();
   }
@@ -4698,6 +5125,76 @@
     });
   }
 
+  function setupPopupQrActions() {
+    el("popup-generate-qr").addEventListener("click", async () => {
+      try {
+        const bundle = await generatePopupQrBundle();
+        state.popupQr = {
+          chunks: bundle.chunks,
+          index: 0,
+          transferId: bundle.transferId,
+          popupSignature: currentPopupSignature()
+        };
+        setStatus("popup-qr-meta", `弹出字符二维码：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
+        updatePopupQrUi();
+        openPopupQrPreviewDialog();
+      } catch (e) {
+        setStatus("popup-qr-meta", `生成失败：${e.message}`, "err");
+      }
+    });
+    el("popup-download-qr-preview").addEventListener("click", async () => {
+      if (!state.popupQr.chunks.length) {
+        setStatus("popup-qr-meta", "请先生成弹出字符二维码", "err");
+        return;
+      }
+      try {
+        const bundle = {
+          chunks: state.popupQr.chunks.slice(),
+          total: state.popupQr.chunks.length,
+          transferId: state.popupQr.transferId
+        };
+        await downloadQrLongImage(bundle, null, TRANSFER_TYPE_POPUP);
+        setStatus("popup-qr-meta", `已下载弹出字符二维码长图：${bundle.total} 个分片`, "ok");
+      } catch (e) {
+        setStatus("popup-qr-meta", `长图导出失败：${e.message}`, "err");
+      }
+    });
+    el("popup-prev-qr").addEventListener("click", () => {
+      if (!state.popupQr.chunks.length) return;
+      state.popupQr.index = (state.popupQr.index - 1 + state.popupQr.chunks.length) % state.popupQr.chunks.length;
+      updatePopupQrUi();
+    });
+    el("popup-next-qr").addEventListener("click", () => {
+      if (!state.popupQr.chunks.length) return;
+      state.popupQr.index = (state.popupQr.index + 1) % state.popupQr.chunks.length;
+      updatePopupQrUi();
+    });
+    el("popup-import-qr-image").addEventListener("click", () => {
+      const input = el("popup-import-qr-image-file");
+      if (!input) return;
+      input.value = "";
+      input.click();
+    });
+    el("popup-import-qr-image-file").addEventListener("change", async (ev) => {
+      const file = ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file) return;
+      if (state.popupImportRunning) {
+        setStatus("popup-qr-meta", "已有导入任务在进行，请稍后重试", "err");
+        return;
+      }
+      state.popupImportRunning = true;
+      try {
+        await importPopupFromQrLongImage(file);
+      } catch (e) {
+        setStatus("popup-qr-meta", `长图导入失败：${e.message}`, "err");
+      } finally {
+        state.popupImportRunning = false;
+        const input = el("popup-import-qr-image-file");
+        if (input) input.value = "";
+      }
+    });
+  }
+
   function escapeHtml(s) {
     return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
@@ -4711,8 +5208,10 @@
     initTabs();
     initLayoutTab();
     initThemeTab();
+    initPopupTab();
     setupQrActions();
     setupThemeQrActions();
+    setupPopupQrActions();
     const previewPanel = document.querySelector(".keyboard-preview-panel");
     if (previewPanel) {
       previewPanel.addEventListener("toggle", () => {
@@ -4726,13 +5225,18 @@
     state.themeHeightObserver = new ResizeObserver(() => syncThemeJsonHeight());
     const themeMainCardEl = document.querySelector(".theme-main-card");
     if (themeMainCardEl) state.themeHeightObserver.observe(themeMainCardEl);
+    state.popupHeightObserver = new ResizeObserver(() => syncPopupJsonHeight());
+    const popupMainCardEl = document.querySelector(".popup-main-card");
+    if (popupMainCardEl) state.popupHeightObserver.observe(popupMainCardEl);
     window.addEventListener("resize", syncJsonEditorHeight);
     window.addEventListener("resize", syncThemeJsonHeight);
+    window.addEventListener("resize", syncPopupJsonHeight);
     window.addEventListener("resize", updateFixedChromeMetrics);
     window.addEventListener("resize", () => requestAnimationFrame(fitLayoutPreviewText));
     updateFixedChromeMetrics();
     setStatus("layout-qr-meta", "点击“生成二维码”后会自动按 App 协议分片编码", "");
     setStatus("theme-qr-meta", "点击“分享当前激活主题”可自动导出 ZIP 或二维码长图", "");
+    setStatus("popup-qr-meta", "点击“生成二维码”可预览并下载弹出字符长图", "");
   }
 
   main();
