@@ -110,6 +110,34 @@
     "settings_developer", "settings_about", "settings_license",
     "edit_text_keyboard_layout", "text_keyboard_layout_file_select", "edit_fontset"
   ];
+  const macroAppActionLabels = {
+    theme: "主题",
+    virtual_keyboard: "虚拟键盘",
+    more: "高级菜单",
+    browse_user_data_dir: "浏览用户数据目录",
+    clipboard: "剪贴板",
+    cursor_move: "文本编辑",
+    floating_toggle: "浮动键盘",
+    language_switch: "语言切换",
+    reload_config: "重载配置",
+    one_handed_keyboard: "单手键盘",
+    input_method_options: "输入法设置",
+    undo: "撤销",
+    redo: "重做",
+    settings_global_options: "全局选项",
+    settings_input_methods: "输入法",
+    settings_candidates_window: "候选窗口",
+    settings_clipboard: "剪贴板",
+    settings_symbol: "表情和符号",
+    settings_plugin: "插件",
+    settings_advanced: "高级",
+    settings_developer: "开发者",
+    settings_about: "关于",
+    settings_license: "许可",
+    edit_text_keyboard_layout: "编辑文本键盘布局",
+    text_keyboard_layout_file_select: "文本键盘布局文件",
+    edit_fontset: "编辑字体集"
+  };
   const macroModifierKeys = new Set([
     "Ctrl_L", "Ctrl_R", "Alt_L", "Alt_R", "Shift_L", "Shift_R",
     "Meta_L", "Meta_R", "Super_L", "Super_R", "Hyper_L", "Hyper_R",
@@ -1201,6 +1229,7 @@
       hasMainAlt: type === "AlphabetKey",
       hasLabel: labelTypes.has(type),
       hasSubLabel: type === "LayoutSwitchKey",
+      hasEditableSubLabel: false,
       hasDisplayText: displayTextTypes.has(type),
       hasSwipeLabel: swipeTypes.has(type),
       hasMacroLabels: type === "MacroKey",
@@ -1235,7 +1264,7 @@
     const inComposeEdit = !!state.composeNestedContext;
     document.querySelectorAll(".key-basic-main, .key-basic-alt").forEach((node) => { node.hidden = !c.hasMainAlt; });
     document.querySelectorAll(".key-basic-label").forEach((node) => { node.hidden = !c.hasLabel; });
-    document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasSubLabel; });
+    document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasEditableSubLabel; });
     document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit; });
     const displayBtn = el("layout-key-open-display-text");
     const labelsBtn = el("layout-key-open-labels");
@@ -1248,6 +1277,7 @@
     if (colorsBtn) colorsBtn.disabled = inComposeEdit && !isComposeIndependentColorEnabled();
     if (composeBtn) composeBtn.disabled = !!state.composeNestedContext;
     if (!c.hasDisplayText && keyDialogState.draft) delete keyDialogState.draft.displayText;
+    if (!c.hasSubLabel && keyDialogState.draft) delete keyDialogState.draft.subLabel;
     if (!c.hasSwipeLabel && keyDialogState.draft) delete keyDialogState.draft.swipeLabel;
     if (!c.hasMacroLabels && keyDialogState.draft) {
       delete keyDialogState.draft.altLabel;
@@ -1259,6 +1289,7 @@
     if (inComposeEdit && keyDialogState.draft) {
       delete keyDialogState.draft.weight;
       delete keyDialogState.draft.rowHeightPercent;
+      delete keyDialogState.draft.composeOverride;
     }
     refreshKeyDialogSummaries();
     syncKeyDialogActionButtons();
@@ -1306,6 +1337,7 @@
 
   function applyMainFieldsToDraft(key) {
     const type = el("layout-key-type").value.trim();
+    const c = keyTypeCapabilities(type || "AlphabetKey");
     const main = el("layout-key-main").value;
     const alt = el("layout-key-alt").value;
     const label = el("layout-key-label").value;
@@ -1316,8 +1348,18 @@
     if (type) key.type = type;
     if (main.trim()) key.main = main; else delete key.main;
     if (alt.trim()) key.alt = alt; else delete key.alt;
-    if (label.trim()) key.label = label; else delete key.label;
-    if (subLabel.trim()) key.subLabel = subLabel; else delete key.subLabel;
+    if (c.hasLabel) {
+      if (type === "LayoutSwitchKey") key.label = label.trim() ? label : "?123";
+      else if (type === "SymbolKey") key.label = label.trim() ? label : ".";
+      else if (label.trim()) key.label = label;
+      else delete key.label;
+    } else {
+      delete key.label;
+    }
+    if (c.hasEditableSubLabel) {
+      if (subLabel.trim()) key.subLabel = subLabel;
+      else delete key.subLabel;
+    }
     if (inComposeEdit) {
       delete key.weight;
       delete key.rowHeightPercent;
@@ -1334,6 +1376,30 @@
     }
   }
 
+  function normalizeDraftForSaveByAppRules(key) {
+    const type = String(key?.type || "").trim();
+    if (!type) throw new Error("type 不能为空");
+    if (type === "AlphabetKey") {
+      const main = String(key.main || "").trim();
+      const alt = String(key.alt || "").trim();
+      if (!main) throw new Error("主字符不能为空");
+      if (!alt) throw new Error("副字符不能为空");
+      if (Array.from(main).length !== 1) throw new Error("主字符必须是单个字符");
+      if (Array.from(alt).length !== 1) throw new Error("副字符必须是单个字符");
+    }
+    if (type === "MacroKey") {
+      const label = String(key.label || "").trim();
+      if (!label) throw new Error("标签不能为空");
+      const tapSteps = Array.isArray(key.tap?.macro) ? key.tap.macro : [];
+      if (!tapSteps.length) {
+        key.tap = { macro: [{ type: "text", text: "" }] };
+      }
+    }
+    if (state.composeNestedContext) {
+      delete key.composeOverride;
+    }
+  }
+
   function saveLayoutKeyDialog() {
     try {
       if (state.composeNestedContext) {
@@ -1341,7 +1407,7 @@
         syncComposeMetaToParentDraft();
         const key = deepClone(keyDialogState.draft || {});
         normalizeRowHeightKey(key);
-        if (!key.type) throw new Error("type 不能为空");
+        normalizeDraftForSaveByAppRules(key);
         finishComposeNestedEdit(true);
         return;
       }
@@ -1352,7 +1418,7 @@
       updateDraftFromMainFields();
       const key = deepClone(keyDialogState.draft || {});
       normalizeRowHeightKey(key);
-      if (!key.type) throw new Error("type 不能为空");
+      normalizeDraftForSaveByAppRules(key);
       if (keyIndex >= 0 && keyIndex < rows[rowIndex].length) rows[rowIndex][keyIndex] = key;
       else rows[rowIndex].push(key);
       el("layout-key-dialog").close();
@@ -1568,8 +1634,10 @@
     const out = [];
     (Array.isArray(rawKeys) ? rawKeys : []).forEach((key) => {
       const code = String(key?.code || "").trim();
-      if (!code || !allowed.has(code) || seen.has(code)) return;
-      seen.add(code);
+      if (!code || !allowed.has(code)) return;
+      const id = `fcitx:${code}`;
+      if (seen.has(id)) return;
+      seen.add(id);
       out.push({ keyType: "fcitx", code });
     });
     return out;
@@ -1636,7 +1704,8 @@
     const preview = steps.slice(0, 3).map((s) => {
       if (s.type === "text") return `text("${(s.text || "").slice(0, 8)}")`;
       if (s.type === "layer") return `layer(${normalizeLayerMode(s.keys?.[0]?.code)}:${s.text || "?"})`;
-      if (s.type === "edit" || s.type === "app") return `${s.type}:${s.keys?.[0]?.code || "?"}`;
+      if (s.type === "edit") return `${s.type}:${macroEditActionLabels[s.keys?.[0]?.code] || s.keys?.[0]?.code || "?"}`;
+      if (s.type === "app") return `${s.type}:${macroAppActionLabels[s.keys?.[0]?.code] || s.keys?.[0]?.code || "?"}`;
       return `${s.type}[${(s.keys || []).map((k) => k.code).join("+")}]`;
     }).join(" -> ");
     return steps.length > 3 ? `${preview} ... (${steps.length} steps)` : preview;
@@ -1713,7 +1782,7 @@
       const options = stepType === "edit" ? macroEditActions : macroAppActions;
       const preferred = String(step.keys?.[0]?.code || "");
       const current = options.includes(preferred) ? preferred : (options[0] || "");
-      select.innerHTML = options.map((v) => `<option value="${escapeAttr(v)}">${escapeHtml(stepType === "edit" ? (macroEditActionLabels[v] || v) : v)}</option>`).join("");
+      select.innerHTML = options.map((v) => `<option value="${escapeAttr(v)}">${escapeHtml(stepType === "edit" ? (macroEditActionLabels[v] || v) : (macroAppActionLabels[v] || v))}</option>`).join("");
       if (current) select.value = current;
       step.keys = [{ keyType: "fcitx", code: select.value }];
       select.addEventListener("change", () => { step.keys = [{ keyType: "fcitx", code: select.value }]; });
@@ -1760,7 +1829,7 @@
           const values = options.includes(key.code) || !key.code ? options : [key.code, ...options];
           codeSel.innerHTML = values.map((v) => `<option value="${escapeAttr(v)}">${escapeHtml(getMacroKeyDisplayName(v))}</option>`).join("");
           codeSel.value = key.code || values[0] || "";
-          key.code = codeSel.value;
+          key.code = codeSel.value || "";
           codeSel.title = describeKey(key);
         };
         syncOptions();
@@ -1855,7 +1924,14 @@
   function normalizeMacroStepsForSave(steps) {
     return steps.map((step) => {
       const type = step.type || "tap";
-      const keys = Array.isArray(step.keys) ? step.keys.map((k) => ({ keyType: "fcitx", code: String(k.code || "").trim() })).filter((k) => k.code) : [];
+      const keys = sanitizeMacroKeys(
+        Array.isArray(step.keys)
+          ? step.keys.map((k) => ({
+            keyType: "fcitx",
+            code: String(k?.code || "").trim()
+          }))
+          : []
+      );
       const text = String(step.text || "");
       return { type, keys, text };
     });
@@ -2191,6 +2267,7 @@
     updateDraftFromMainFields();
     const parentDraft = keyDialogState.draft || {};
     const composeDraft = deepClone(parentDraft.composeOverride || { type: parentDraft.type || "AlphabetKey" });
+    delete composeDraft.composeOverride;
     if (parentDraft.independentColor && composeDraft.independentColor == null) {
       composeDraft.independentColor = true;
     }
