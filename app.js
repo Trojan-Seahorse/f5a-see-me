@@ -2891,6 +2891,17 @@
     return (profile || "").trim() || "default";
   }
 
+  function extractProfileFromTransferId(transferId) {
+    const idx = String(transferId || "").indexOf("~");
+    if (idx < 0 || idx >= transferId.length - 1) return "";
+    const encoded = transferId.slice(idx + 1);
+    try {
+      return new TextDecoder().decode(base64UrlToBytes(encoded)).trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
   function buildChunkLabels(bundle, profile) {
     return bundle.chunks.map((_, i) => `Layout · ${displayProfile(profile)} · Chunk ${i + 1}/${bundle.total} · ${bundle.transferId}`);
   }
@@ -3240,6 +3251,7 @@
 
     state.layout = decoded.layout;
     state.qr = { chunks: [], index: 0, transferId: "", layoutSignature: "" };
+    el("layout-profile").value = extractProfileFromTransferId(decoded.transferId);
     ensureSelection();
     syncLayoutUiFromState();
     setStatus("layout-json-status", "已从二维码长图导入 JSON", "ok");
