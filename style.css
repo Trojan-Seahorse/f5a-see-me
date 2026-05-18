@@ -262,12 +262,10 @@ input[type="checkbox"] {
 }
 
 .theme-workbench {
-  grid-template-columns: 1.4fr 1fr;
   align-items: start;
 }
 
 .popup-workbench {
-  grid-template-columns: 1.3fr 1fr;
   align-items: start;
 }
 
@@ -510,7 +508,7 @@ input[type="checkbox"] {
   }
 
   .theme-preview-extra-side {
-    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   }
 }
 
@@ -1135,6 +1133,26 @@ input[type="checkbox"] {
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .layout-workbench,
+  .layout-workbench.theme-workbench,
+  .layout-workbench.popup-workbench {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .keyboard-preview-panel {
+    padding: 8px 12px 6px;
+  }
+
+  .theme-preview-extra-side {
+    display: none;
+  }
+
+  .layout-preview {
+    max-width: none;
+    padding: 8px;
   }
 }
 
