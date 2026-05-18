@@ -46,6 +46,13 @@ body {
   color: var(--sub);
 }
 
+.topbar h2 a,
+.topbar h2 a:visited,
+.topbar h2 a:hover,
+.topbar h2 a:active {
+  color: inherit;
+}
+
 .tabs {
   display: flex;
   gap: 8px;
