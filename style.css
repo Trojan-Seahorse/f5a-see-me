@@ -1341,6 +1341,21 @@ input[type="checkbox"] {
   color: var(--sub);
 }
 
+.visit-stats {
+  margin: 2px 0 0;
+  text-align: center;
+  font-size: 12px;
+}
+
+.visit-stats > span {
+  display: inline-block;
+  margin: 0 4px;
+}
+
+.visit-sep {
+  opacity: 0.6;
+}
+
 @media (min-width: 1081px) {
   .layout-workbench {
     grid-template-columns: minmax(420px, 1fr) minmax(420px, .95fr);
