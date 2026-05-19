@@ -1220,6 +1220,50 @@
           syncPopupJsonHeight();
         }
       });
+      // 当左侧 popup 主卡折叠/展开时，立即同步右侧 JSON 区高度
+      const popupMainCard = document.querySelector(".popup-main-card");
+      if (popupMainCard) {
+        popupMainCard.addEventListener("toggle", () => {
+          // 彻底关闭动画：折叠时直接隐藏，展开时显示并同步高度
+          const jsonCard = el("popup-json-card");
+          if (!popupMainCard.open) {
+            // 只让右侧 json 区高度为 0，不隐藏 details 元素本身
+            if (jsonCard) {
+              const editor = state.popupJsonEditor;
+              if (editor) {
+                editor.dom.style.height = "0px";
+                editor.dom.style.maxHeight = "0px";
+                editor.dom.style.minHeight = "0";
+                editor.dom.style.width = "100%";
+                const scroller = editor.dom.querySelector(".cm-scroller");
+                if (scroller) {
+                  scroller.style.height = "0px";
+                  scroller.style.maxHeight = "0px";
+                  scroller.style.minHeight = "0";
+                  scroller.style.overflow = "hidden";
+                }
+              } else {
+                const textarea = el("popup-json");
+                if (textarea) {
+                  textarea.style.height = "0px";
+                  textarea.style.maxHeight = "0px";
+                  textarea.style.minHeight = "0";
+                  textarea.style.width = "100%";
+                  textarea.style.overflow = "hidden";
+                }
+              }
+            }
+          } else {
+            if (jsonCard) {
+              // 恢复显示并同步高度
+              if (state.popupJsonEditor) {
+                jsonCard.style.display = "";
+              }
+              syncPopupJsonHeight();
+            }
+          }
+        });
+      }
     }
     renderPopupEditor();
     syncPopupJsonFromState();
@@ -1494,6 +1538,49 @@
           syncThemeJsonHeight();
         }
       });
+      // 当左侧 theme 主卡折叠/展开时，立即同步右侧 JSON 区高度
+      const themeMainCard = document.querySelector(".theme-main-card");
+      if (themeMainCard) {
+        themeMainCard.addEventListener("toggle", () => {
+          const jsonCard = el("theme-json-card");
+          if (!themeMainCard.open) {
+            // 只让右侧 json 区高度为 0，不隐藏 details 元素本身
+            if (jsonCard) {
+              const editor = state.themeJsonEditor;
+              if (editor) {
+                editor.dom.style.height = "0px";
+                editor.dom.style.maxHeight = "0px";
+                editor.dom.style.minHeight = "0";
+                editor.dom.style.width = "100%";
+                const scroller = editor.dom.querySelector(".cm-scroller");
+                if (scroller) {
+                  scroller.style.height = "0px";
+                  scroller.style.maxHeight = "0px";
+                  scroller.style.minHeight = "0";
+                  scroller.style.overflow = "hidden";
+                }
+              } else {
+                const textarea = el("theme-json");
+                if (textarea) {
+                  textarea.style.height = "0px";
+                  textarea.style.maxHeight = "0px";
+                  textarea.style.minHeight = "0";
+                  textarea.style.width = "100%";
+                  textarea.style.overflow = "hidden";
+                }
+              }
+            }
+          } else {
+            if (jsonCard) {
+              // 恢复显示并同步高度
+              if (state.themeJsonEditor) {
+                jsonCard.style.display = "";
+              }
+              syncThemeJsonHeight();
+            }
+          }
+        });
+      }
     }
     renderThemeList();
     renderThemeEditor();

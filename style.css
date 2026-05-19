@@ -1,3 +1,13 @@
+/* 禁用 details 元素的折叠动画，确保高度瞬时变化 */
+details.card,
+.popup-main-card,
+.theme-main-card {
+  transition-property: none !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  transition-timing-function: unset !important;
+  will-change: unset !important;
+}
 :root {
   --bg: #0f1115;
   --panel: #171a21;
@@ -1278,11 +1288,14 @@ input[type="checkbox"] {
   }
 
   .layout-workbench.theme-workbench {
-    align-items: start;
+    /* 保持左右两栏在高度上可伸展以匹配并列的 json 卡 */
+    align-items: stretch;
   }
 
+  /* 对 popup 工作区，确保左右两栏卡片高度同步（stretch）
+     以便 popup-json-card 与 popup-main-card 保持相同高度 */
   .layout-workbench.popup-workbench {
-    align-items: start;
+    align-items: stretch;
   }
 
   .layout-workbench .card {
@@ -1319,6 +1332,32 @@ input[type="checkbox"] {
 
   .json-card .json-editor {
     resize: none;
+    overflow: auto;
+  }
+
+  /* 让 theme 主卡在展开时采用栅格布局，使其内容区能够拉伸并与 theme-json-card 对齐 */
+  .theme-main-card[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .theme-main-card[open] .theme-list,
+  .theme-main-card[open] .theme-color-rows {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* 让 popup 主卡在展开时也采用与 json-card 相似的栅格布局，
+     使 .popup-entry-list 能随着父容器拉伸以填满高度 */
+  .popup-main-card[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .popup-main-card[open] .popup-entry-list {
+    min-height: 0;
     overflow: auto;
   }
 }
