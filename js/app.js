@@ -299,6 +299,8 @@
     initialLayout: deepClone(defaultLayout),
     popupEntries: {},
     initialPopupEntries: {},
+    initialThemeCatalogSignature: "",
+    initialThemeAppSyncSignature: "",
     themeCatalog: createBuiltinThemeCatalog(),
     selectedThemeId: `builtin-${defaultThemePresetName}`,
     activeTab: "tab-layout",
@@ -399,6 +401,54 @@
     } catch (_) {
       return "";
     }
+  }
+
+  function layoutHasChanges() {
+    try {
+      return currentLayoutSignature() !== JSON.stringify(normalizeLayoutObject(deepClone(state.initialLayout)));
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function themeCatalogSignature(themeCatalog = state.themeCatalog, selectedThemeId = state.selectedThemeId) {
+    try {
+      const normalized = (Array.isArray(themeCatalog) ? themeCatalog : []).map((theme) => ({
+        id: String(theme?.id || ""),
+        name: String(theme?.name || ""),
+        builtin: !!theme?.builtin,
+        isDark: !!theme?.isDark,
+        colors: normalizeThemeColors(theme?.colors || {}),
+        backgroundImage: String(theme?.backgroundImage || "")
+      }));
+      return JSON.stringify({ selectedThemeId: String(selectedThemeId || ""), themes: normalized });
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function themeHasChanges() {
+    return themeCatalogSignature() !== state.initialThemeCatalogSignature;
+  }
+
+  function themeAppSyncHasChanges() {
+    try {
+      return JSON.stringify(state.themeAppSync) !== state.initialThemeAppSyncSignature;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function hasUnsavedChanges() {
+    return layoutHasChanges() || popupHasChanges() || themeHasChanges() || themeAppSyncHasChanges();
+  }
+
+  function setupBeforeUnloadGuard() {
+    window.addEventListener("beforeunload", (event) => {
+      if (!hasUnsavedChanges()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
   }
 
   function normalizeThemeColors(raw) {
@@ -1555,6 +1605,8 @@
       state.initialPopupEntries = {};
     }
     ensureSelection();
+    state.initialThemeCatalogSignature = themeCatalogSignature();
+    state.initialThemeAppSyncSignature = JSON.stringify(state.themeAppSync);
   }
 
   function baseNames(layout = state.layout) {
@@ -5631,6 +5683,7 @@
 
   async function main() {
     await initializeBuiltinData();
+    setupBeforeUnloadGuard();
     initTabs();
     initLayoutTab();
     initThemeTab();
