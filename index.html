@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=20260519164000">
 </head>
 <body>
   <header class="topbar">
@@ -119,6 +119,41 @@
           <div id="theme-qr-meta" class="status"></div>
           <div id="theme-list" class="theme-list"></div>
           <div id="theme-color-rows" class="theme-color-rows"></div>
+          <details class="card" id="theme-app-sync-card" open>
+            <summary>同步 App 主题配置</summary>
+            <div class="theme-app-sync-layout">
+              <div class="theme-app-sync-toggles">
+                <div class="form-row">
+                  <label><input type="checkbox" id="theme-app-border-enabled"> 启用按键边框</label>
+                </div>
+                <div class="form-row">
+                  <label><input type="checkbox" id="theme-app-border-outline"> 启用按键边框描边</label>
+                </div>
+                <div class="form-row">
+                  <label><input type="checkbox" id="theme-app-gboard-style"> 使用 Gboard 风格操作按钮</label>
+                </div>
+              </div>
+              <div class="theme-app-sync-controls">
+                <div class="form-row">
+                  <label>按键横向边距 <input type="number" id="theme-app-key-hgap" min="0" max="24" step="1" value="3"> dp</label>
+                </div>
+                <div class="form-row">
+                  <label>按键纵向边距 <input type="number" id="theme-app-key-vgap" min="0" max="24" step="1" value="3"> dp</label>
+                </div>
+                <div class="form-row">
+                  <label>按键圆角半径 <input type="number" id="theme-app-key-radius" min="0" max="32" step="1" value="4"> px</label>
+                </div>
+                <div class="form-row form-inline">
+                  <label for="theme-app-punct-pos">标点位置</label>
+                  <select id="theme-app-punct-pos">
+                    <option value="bottom" selected>底部</option>
+                    <option value="top-right">右上角</option>
+                    <option value="none">无</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </details>
           <div id="theme-editor-status" class="status"></div>
         </details>
 
@@ -430,6 +465,6 @@
   <script src="./js/qr-import.js?v=20260518215754"></script>
   <script src="./js/jscolor/jscolor.js?v=20260516-1032"></script>
   <script src="./js/key-editor-bindings.js?v=20260518215754"></script>
-  <script src="./js/app.js?v=20260519113000"></script>
+  <script src="./js/app.js?v=20260519164000"></script>
 </body>
 </html>

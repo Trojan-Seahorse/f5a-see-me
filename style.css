@@ -773,6 +773,10 @@ input[type="checkbox"] {
   background: #10131b;
   max-width: 760px;
   margin: 0 auto;
+  --preview-row-gap: 8px;
+  --preview-key-hgap: 3px;
+  --preview-key-vgap: 7px;
+  --preview-key-radius: 4px;
 }
 
 .preview-shell {
@@ -787,7 +791,7 @@ input[type="checkbox"] {
 }
 
 .layout-row {
-  margin-bottom: 8px;
+  margin-bottom: var(--preview-row-gap, 8px);
   display: flex;
   justify-content: center;
 }
@@ -803,15 +807,15 @@ input[type="checkbox"] {
 .layout-key-slot {
   flex: 0 0 var(--key-width, 0%);
   min-width: 0;
-  padding: 0 3px;
+  padding: 0 var(--preview-key-hgap, 3px);
   display: flex;
 }
 
 .layout-key {
-  min-height: var(--row-height, 42px);
+  height: var(--key-height, calc(var(--row-height, 42px) - var(--preview-key-vgap, 0px) * 2));
   width: 100%;
   color: var(--text);
-  border-radius: 4px;
+  border-radius: var(--preview-key-radius, 4px);
   border: 1px solid var(--border);
   background: #242a38;
   display: flex;
@@ -820,10 +824,34 @@ input[type="checkbox"] {
   font-weight: 600;
   position: relative;
   overflow: hidden;
-  padding: 4px;
+  padding: 0;
   font-size: clamp(14px, 42cqw, 23px);
   cursor: default;
   container-type: inline-size;
+  margin: var(--preview-key-vgap, 0px) 0;
+}
+
+.layout-key.no-border {
+  border-width: 0 !important;
+}
+
+.layout-key.border-shadow {
+  border-width: 0 !important;
+  box-shadow: inset 0 -1px 0 var(--preview-key-shadow, rgba(0, 0, 0, 0.18));
+}
+
+.layout-key.border-outline {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.18);
+}
+
+.layout-key.gboard-pill {
+  border-radius: 999px !important;
+}
+
+.layout-key.punct-bottom {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
 }
 
 .layout-key-main {
@@ -902,6 +930,13 @@ input[type="checkbox"] {
   font-size: clamp(7px, 18cqw, 10px);
   color: var(--sub);
   line-height: 1;
+}
+
+.layout-key-alt.bottom {
+  position: static;
+  max-width: 100%;
+  text-align: center;
+  margin-top: 1px;
 }
 
 .qr-wrap {
@@ -1125,6 +1160,81 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+#theme-app-sync-card .form-grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 6px 10px;
+}
+
+#theme-app-sync-card .theme-app-sync-layout {
+  display: grid;
+  gap: 8px;
+}
+
+#theme-app-sync-card .theme-app-sync-toggles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+#theme-app-sync-card .theme-app-sync-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+#theme-app-sync-card .form-row {
+  margin-bottom: 4px;
+}
+
+#theme-app-sync-card .form-row > label {
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  line-height: 1.25;
+}
+
+#theme-app-sync-card input[type="number"] {
+  width: 78px;
+  padding: 4px 6px;
+}
+
+#theme-app-sync-card select {
+  min-width: 110px;
+  padding: 4px 6px;
+}
+
+#theme-app-sync-card .form-row.form-inline {
+  gap: 6px;
+}
+
+#theme-app-sync-card .form-row.form-inline > label {
+  margin-bottom: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+#theme-app-sync-card .form-row.form-inline > select {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 120px;
+}
+
+@media (max-width: 860px) {
+  #theme-app-sync-card .theme-app-sync-toggles,
+  #theme-app-sync-card .theme-app-sync-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  #theme-app-sync-card .theme-app-sync-toggles,
+  #theme-app-sync-card .theme-app-sync-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .form-inline {

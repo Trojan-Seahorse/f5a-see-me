@@ -68,7 +68,7 @@
   };
 
   const keyTypes = [
-    "AlphabetKey", "CapsKey", "LayoutSwitchKey", "CommaKey", "LanguageKey",
+    "AlphabetKey", "CapsKey", "LayoutSwitchKey", "LayerSwitchKey", "CommaKey", "LanguageKey",
     "SpaceKey", "SymbolKey", "ReturnKey", "BackspaceKey", "MacroKey"
   ];
 
@@ -350,7 +350,16 @@
     popupPointerDragHoldTimer: null,
     popupPointerDragActive: false,
     popupPointerDragStartX: 0,
-    popupPointerDragStartY: 0
+    popupPointerDragStartY: 0,
+    themeAppSync: {
+      borderEnabled: false,
+      borderOutline: false,
+      gboardStyle: false,
+      keyHGap: 3,
+      keyVGap: 3,
+      keyRadius: 4,
+      punctPos: 'bottom'
+    }
   };
 
   const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null };
@@ -466,15 +475,47 @@
   }
 
   function resolvePreviewColorsForKey(key) {
+    const borderEnabled = state.themeAppSync?.borderEnabled ?? PREVIEW_KEY_BORDER_ENABLED;
+    const gboardStyle = !!state.themeAppSync?.gboardStyle;
     const variant = keyVariantClass(key);
     const isAlt = variant.includes("alt-key");
     const isAccent = variant.includes("accent-key");
     const isSpace = variant.includes("space-key");
     const isCompose = variant.includes("compose-key");
+    const isLayoutSwitch = key?.type === "LayoutSwitchKey" || key?.type === "LayerSwitchKey";
+    const isReturn = key?.type === "ReturnKey";
+    if (!borderEnabled) {
+      const backgroundColor = isSpace
+        ? resolveThemeTokenColor("spaceBarColor")
+        : isReturn
+          ? resolveThemeTokenColor("accentKeyBackgroundColor")
+        : isLayoutSwitch
+          ? resolveThemeTokenColor(gboardStyle ? "altKeyBackgroundColor" : "keyboardColor")
+        : isAccent
+          ? resolveKeyColorValue(key, "backgroundColor", "backgroundColorMonet", resolveThemeTokenColor("accentKeyBackgroundColor"))
+        : resolveThemeTokenColor("keyboardColor");
+      const fallbackText = isAccent
+        ? resolveThemeTokenColor("accentKeyTextColor")
+        : isLayoutSwitch
+          ? resolveThemeTokenColor("altKeyTextColor")
+        : isAlt
+          ? resolveThemeTokenColor("altKeyTextColor")
+          : resolveThemeTokenColor("keyTextColor");
+      const fallbackAltText = resolveThemeTokenColor("altKeyTextColor");
+      const textColor = resolveKeyColorValue(key, "textColor", "textColorMonet", fallbackText);
+      const altTextColor = resolveKeyColorValue(key, "altTextColor", "altTextColorMonet", fallbackAltText);
+      const composeHintColor = resolveThemeTokenColor("genericActiveBackgroundColor");
+      return {
+        backgroundCss: argbToCss(backgroundColor),
+        textCss: argbToCss(isCompose ? composeHintColor : (isReturn ? resolveThemeTokenColor("accentKeyTextColor") : textColor)),
+        altTextCss: argbToCss(altTextColor),
+        borderCss: argbToCss(backgroundColor)
+      };
+    }
     const fallbackBackground = isAccent
       ? resolveThemeTokenColor("accentKeyBackgroundColor")
       : isSpace
-        ? resolveThemeTokenColor(PREVIEW_KEY_BORDER_ENABLED ? "keyBackgroundColor" : "spaceBarColor")
+        ? resolveThemeTokenColor(borderEnabled ? "keyBackgroundColor" : "spaceBarColor")
         : isAlt
           ? resolveThemeTokenColor("altKeyBackgroundColor")
           : resolveThemeTokenColor("keyBackgroundColor");
@@ -487,7 +528,7 @@
     const backgroundColor = resolveKeyColorValue(key, "backgroundColor", "backgroundColorMonet", fallbackBackground);
     const textColor = resolveKeyColorValue(key, "textColor", "textColorMonet", fallbackText);
     const altTextColor = resolveKeyColorValue(key, "altTextColor", "altTextColorMonet", fallbackAltText);
-    const borderColor = PREVIEW_KEY_BORDER_ENABLED
+    const borderColor = borderEnabled
       ? resolveKeyColorValue(key, "shadowColor", "shadowColorMonet", resolveThemeTokenColor("keyShadowColor"))
       : backgroundColor;
     const composeHintColor = resolveThemeTokenColor("genericActiveBackgroundColor");
@@ -1717,6 +1758,7 @@
     switch (key.type) {
       case "CapsKey": return "⇧";
       case "LayoutSwitchKey": return key.label || "?123";
+      case "LayerSwitchKey": return key.label || "?123";
       case "CommaKey": return ",";
       case "LanguageKey": return "🌐";
       case "SpaceKey": return "␣";
@@ -1737,6 +1779,7 @@
       switch (key.type) {
         case "CapsKey": return "Caps";
         case "LayoutSwitchKey": return key.label || "?123";
+        case "LayerSwitchKey": return key.label || "?123";
         case "CommaKey": return ",";
         case "LanguageKey": return "Lang";
         case "SpaceKey": return "Space";
@@ -1756,6 +1799,22 @@
     if (key.type === "MacroKey") return key.altLabel || key.longPressLabel || "";
     if (key.swipeLabel) return key.swipeLabel;
     return "";
+  }
+
+  function previewMainFontMaxForKey(key) {
+    const variant = keyVariantClass(key);
+    if (variant.includes("alt-key")) return 16;
+    if (variant.includes("macro-key") || variant.includes("accent-key")) return 20;
+    if (variant.includes("space-key")) return 18;
+    return 23;
+  }
+
+  function resolvePreviewPunctPlacement(key, preferred, keyHeight) {
+    if (preferred !== 'bottom') return preferred;
+    if (!keySubText(key)) return 'none';
+    // Match App behavior: fallback to top-right when stacked main+alt doesn't fit.
+    const stackedMinHeight = previewMainFontMaxForKey(key) + 10 + 1;
+    return keyHeight >= stackedMinHeight ? 'bottom' : 'top-right';
   }
 
   function renderSelectors() {
@@ -1784,19 +1843,41 @@
     const rows = getRows();
     const rowPercents = resolveRowHeightPercents(rows);
     const root = el("layout-preview");
+    const cfg = state.themeAppSync;
+    const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
+    const punctPos = cfg.punctPos || 'bottom';
     applyPreviewThemeSurface();
+    root.style.setProperty('--preview-row-gap', '8px');
+    root.style.setProperty('--preview-key-hgap', `${cfg.keyHGap || 0}px`);
+    root.style.setProperty('--preview-key-vgap', `${keyVGap}px`);
+    root.style.setProperty('--preview-key-radius', `${cfg.keyRadius || 0}px`);
     root.innerHTML = rows.map((row, rowIndex) => {
       const rowHeight = effectiveRowHeight(rowPercents[rowIndex] ?? 0);
+      const keyHeight = effectivePreviewKeyHeight(rowHeight, keyVGap);
       const widths = resolveRegularRowWidths(row);
-      return `<div class="layout-row" style="--row-height:${rowHeight}px"><div class="keys">${row.map((key, keyIndex) => {
+      return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${row.map((key, keyIndex) => {
         const w = widths[keyIndex] || 0;
         const widthPercent = `${(w * 100).toFixed(6)}%`;
         const previewColors = resolvePreviewColorsForKey(key);
-        const keyStyle = `background:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};`;
-        const alt = keySubText(key)
-          ? `<span class="layout-key-alt" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
+        const isActionKey = key.type === 'ReturnKey' || key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey';
+        const punctPlacement = resolvePreviewPunctPlacement(key, punctPos, keyHeight);
+        const keyExtraClasses = [
+          cfg.borderEnabled ? '' : 'no-border',
+          cfg.borderEnabled && !cfg.borderOutline ? 'border-shadow' : '',
+          cfg.borderEnabled && cfg.borderOutline ? 'border-outline' : '',
+          (cfg.borderEnabled
+            ? (cfg.gboardStyle && isActionKey)
+            : (key.type === 'ReturnKey' || (cfg.gboardStyle && (key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey'))))
+            ? 'gboard-pill'
+            : '',
+          punctPlacement === 'bottom' ? 'punct-bottom' : ''
+        ].filter(Boolean).join(' ');
+        const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
+        const keyStyle = `background:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};--preview-key-shadow:${previewColors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
+        const alt = keySubText(key) && punctPlacement !== 'none'
+          ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyle)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
     requestAnimationFrame(fitLayoutPreviewText);
@@ -1815,9 +1896,17 @@
       const value = node.textContent || "";
       const width = Math.max(0, key.clientWidth - reserve);
       if (!value || width <= 0) return;
+      const hasBottomAlt = !!key.querySelector(".layout-key-alt.bottom");
+      const isMain = node.classList.contains("layout-key-main");
+      const isBottomAlt = node.classList.contains("layout-key-alt") && node.classList.contains("bottom");
+      const maxHeight = isMain
+        ? Math.max(8, key.clientHeight - (hasBottomAlt ? 12 : 4))
+        : isBottomAlt
+          ? 10
+          : Math.max(6, Math.floor(key.clientHeight * 0.4));
       let size = maxSize;
       ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
-      while (size > minSize && ctx.measureText(value).width > width) {
+      while (size > minSize && (ctx.measureText(value).width > width || size > maxHeight)) {
         size -= 1;
         ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
       }
@@ -1881,6 +1970,12 @@
     return h > 0 ? Math.max(34, Math.round(48 * h / 25)) : 42;
   }
 
+  function effectivePreviewKeyHeight(rowHeight, keyVGap) {
+    const row = Math.max(1, Number(rowHeight) || 0);
+    const gap = Math.max(0, Number(keyVGap) || 0);
+    return Math.max(1, row - gap * 2);
+  }
+
   function keyWeight(key) {
     if (key && Object.prototype.hasOwnProperty.call(key, "weight")) {
       const n = Number(key.weight);
@@ -1897,6 +1992,7 @@
     switch (key?.type) {
       case "CapsKey":
       case "LayoutSwitchKey":
+      case "LayerSwitchKey":
       case "ReturnKey":
       case "BackspaceKey":
         return 0.15;
@@ -1939,6 +2035,7 @@
     switch (key?.type) {
       case "CapsKey":
       case "LayoutSwitchKey":
+      case "LayerSwitchKey":
       case "CommaKey":
       case "SymbolKey":
       case "LanguageKey":
@@ -2444,12 +2541,12 @@
 
   function keyTypeCapabilities(type) {
     const displayTextTypes = new Set(["AlphabetKey", "MacroKey"]);
-    const swipeTypes = new Set(["LayoutSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey"]);
-    const labelTypes = new Set(["LayoutSwitchKey", "SymbolKey", "MacroKey"]);
+    const swipeTypes = new Set(["LayoutSwitchKey", "LayerSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey"]);
+    const labelTypes = new Set(["LayoutSwitchKey", "LayerSwitchKey", "SymbolKey", "MacroKey"]);
     return {
       hasMainAlt: type === "AlphabetKey",
       hasLabel: labelTypes.has(type),
-      hasSubLabel: type === "LayoutSwitchKey",
+      hasSubLabel: type === "LayoutSwitchKey" || type === "LayerSwitchKey",
       hasEditableSubLabel: false,
       hasDisplayText: displayTextTypes.has(type),
       hasSwipeLabel: swipeTypes.has(type),
@@ -2570,7 +2667,7 @@
     if (main.trim()) key.main = main; else delete key.main;
     if (alt.trim()) key.alt = alt; else delete key.alt;
     if (c.hasLabel) {
-      if (type === "LayoutSwitchKey") key.label = label.trim() ? label : "?123";
+      if (type === "LayoutSwitchKey" || type === "LayerSwitchKey") key.label = label.trim() ? label : "?123";
       else if (type === "SymbolKey") key.label = label.trim() ? label : ".";
       else if (label.trim()) key.label = label;
       else delete key.label;
@@ -4665,6 +4762,13 @@
       LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH,
       Math.max(1, targetWidth - previewPadding * 2)
     );
+    const keyHGap = state.themeAppSync?.keyHGap ?? 3;
+    const keyVGap = Math.max(0, Number(state.themeAppSync?.keyVGap ?? 3) || 0);
+    const keyRadius = state.themeAppSync?.keyRadius ?? 4;
+    const borderEnabled = !!state.themeAppSync?.borderEnabled;
+    const borderOutline = !!state.themeAppSync?.borderOutline;
+    const gboardStyle = !!state.themeAppSync?.gboardStyle;
+    const punctPos = state.themeAppSync?.punctPos || 'bottom';
     const rowPercents = resolveRowHeightPercents(rows);
     const rowHeights = rowPercents.map(effectiveRowHeight);
     const contentHeight = rowHeights.reduce((sum, h) => sum + h, 0) + rows.length * rowGap;
@@ -4703,23 +4807,52 @@
       let x = (targetWidth - keyboardWidth * rowWidth) / 2;
       row.forEach((key, keyIndex) => {
         const slotWidth = keyboardWidth * (widths[keyIndex] || 0);
-        const keyX = x + 3;
-        const keyW = Math.max(1, slotWidth - 6);
+        const keyX = x + keyHGap;
+        const keyY = y + keyVGap;
+        const keyW = Math.max(1, slotWidth - keyHGap * 2);
+        const keyH = effectivePreviewKeyHeight(rowHeight, keyVGap);
         const variant = keyVariantClass(key);
         const previewColors = resolvePreviewColorsForKey(key);
         const isMacro = variant.includes("macro-key");
+        const isActionKey = key.type === 'ReturnKey' || key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey';
         const bg = previewColors.backgroundCss;
         const fg = previewColors.textCss;
+        ctx.save();
         ctx.fillStyle = bg;
-        drawRoundRect(ctx, keyX, y, keyW, rowHeight, 4);
+        drawRoundRect(ctx, keyX, keyY, keyW, keyH, gboardStyle && isActionKey ? keyH / 2 : keyRadius);
         ctx.fill();
-        ctx.lineWidth = isMacro ? 2 : 1;
-        ctx.strokeStyle = previewColors.borderCss;
-        ctx.stroke();
-        drawCenteredText(ctx, previewTitleFromObj(key), keyX, y, keyW, rowHeight, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
+        if (borderEnabled && !borderOutline) {
+          // Simulate App's non-stroke key shadow by drawing a thin bottom inset using keyShadowColor.
+          ctx.beginPath();
+          drawRoundRect(ctx, keyX, keyY + Math.max(1, Math.round(keyH * 0.04)), keyW, keyH, gboardStyle && isActionKey ? keyH / 2 : keyRadius);
+          ctx.fillStyle = previewColors.borderCss;
+          ctx.fill();
+          ctx.beginPath();
+          drawRoundRect(ctx, keyX, keyY, keyW, Math.max(1, keyH - 1), gboardStyle && isActionKey ? keyH / 2 : keyRadius);
+          ctx.fillStyle = bg;
+          ctx.fill();
+        }
+        if (borderEnabled && borderOutline) {
+          ctx.lineWidth = isMacro ? 2 : 1;
+          ctx.strokeStyle = previewColors.borderCss;
+          ctx.stroke();
+          ctx.lineWidth = (isMacro ? 2 : 1) + 2;
+          ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+          ctx.stroke();
+        }
+        ctx.restore();
+        const hasAlt = !!keySubText(key) && punctPos !== 'none';
+        const punctPlacement = resolvePreviewPunctPlacement(key, punctPos, keyH);
+        if (punctPlacement === 'bottom' && hasAlt) {
+          const mainH = Math.max(1, keyH - 12);
+          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, mainH, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
+          drawCenteredText(ctx, keySubText(key), keyX, keyY + mainH - 1, keyW, keyH - mainH + 1, 10, previewColors.altTextCss, 500, 6);
+        } else {
+          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, keyH, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
+        }
         const alt = keySubText(key);
-        if (alt) {
-          drawRightTopText(ctx, alt, keyX, y, keyW, 10, previewColors.altTextCss);
+        if (alt && punctPlacement === 'top-right') {
+          drawRightTopText(ctx, alt, keyX, keyY, keyW, 10, previewColors.altTextCss);
         }
         x += slotWidth;
       });
@@ -5445,6 +5578,47 @@
     return escapeHtml(s).replaceAll("\"", "&quot;");
   }
 
+  function syncThemeAppSyncUiFromState() {
+    el('theme-app-border-enabled').checked = !!state.themeAppSync.borderEnabled;
+    el('theme-app-border-outline').checked = !!state.themeAppSync.borderOutline;
+    el('theme-app-gboard-style').checked = !!state.themeAppSync.gboardStyle;
+    el('theme-app-key-hgap').value = state.themeAppSync.keyHGap;
+    el('theme-app-key-vgap').value = state.themeAppSync.keyVGap;
+    el('theme-app-key-radius').value = state.themeAppSync.keyRadius;
+    el('theme-app-punct-pos').value = state.themeAppSync.punctPos;
+    el('theme-app-border-outline').disabled = !state.themeAppSync.borderEnabled;
+  }
+
+  function syncThemeAppSyncStateFromUi() {
+    state.themeAppSync.borderEnabled = !!el('theme-app-border-enabled').checked;
+    state.themeAppSync.borderOutline = state.themeAppSync.borderEnabled && !!el('theme-app-border-outline').checked;
+    state.themeAppSync.gboardStyle = !!el('theme-app-gboard-style').checked;
+    state.themeAppSync.keyHGap = Number(el('theme-app-key-hgap').value) || 0;
+    state.themeAppSync.keyVGap = Number(el('theme-app-key-vgap').value) || 0;
+    state.themeAppSync.keyRadius = Number(el('theme-app-key-radius').value) || 0;
+    state.themeAppSync.punctPos = el('theme-app-punct-pos').value;
+    syncThemeAppSyncUiFromState();
+  }
+
+  function setupThemeAppSyncUi() {
+    [
+      'theme-app-border-enabled',
+      'theme-app-border-outline',
+      'theme-app-gboard-style',
+      'theme-app-key-hgap',
+      'theme-app-key-vgap',
+      'theme-app-key-radius',
+      'theme-app-punct-pos'
+    ].forEach(id => {
+      el(id).addEventListener('change', () => {
+        syncThemeAppSyncStateFromUi();
+        renderLayoutPreview();
+        // 主题预览长图等也用到
+      });
+    });
+    syncThemeAppSyncUiFromState();
+  }
+
   async function main() {
     await initializeBuiltinData();
     initTabs();
@@ -5454,6 +5628,7 @@
     setupQrActions();
     setupThemeQrActions();
     setupPopupQrActions();
+    setupThemeAppSyncUi();
     const previewPanel = document.querySelector(".keyboard-preview-panel");
     if (previewPanel) {
       previewPanel.addEventListener("toggle", () => {
