@@ -1802,6 +1802,7 @@
   }
 
   function previewMainFontMaxForKey(key) {
+    if (key?.type === "LanguageKey") return 15;
     const variant = keyVariantClass(key);
     if (variant.includes("alt-key")) return 16;
     if (variant.includes("macro-key") || variant.includes("accent-key")) return 20;
@@ -1915,7 +1916,15 @@
 
     document.querySelectorAll("#layout-preview .layout-key-main").forEach((node) => {
       const key = node.closest(".layout-key");
-      const max = key?.classList.contains("alt-key") ? 16 : key?.classList.contains("macro-key") || key?.classList.contains("accent-key") ? 20 : key?.classList.contains("space-key") ? 18 : 23;
+      const max = key?.classList.contains("language-key")
+        ? 15
+        : key?.classList.contains("alt-key")
+          ? 16
+          : key?.classList.contains("macro-key") || key?.classList.contains("accent-key")
+            ? 20
+            : key?.classList.contains("space-key")
+              ? 18
+              : 23;
       fitText(node, max, 7, 600, 8);
     });
     document.querySelectorAll("#layout-preview .layout-key-alt").forEach((node) => fitText(node, 10, 6, 500, 12));
@@ -2065,10 +2074,11 @@
   }
 
   function previewVariantClass(key) {
-    return keyVariantClass(key)
+    const classes = keyVariantClass(key)
       .split(/\s+/)
       .filter((cls) => cls && cls !== "macro-key" && cls !== "compose-key")
-      .join(" ");
+    if (key?.type === "LanguageKey") classes.push("language-key");
+    return classes.join(" ");
   }
 
   function renderLayoutEditor() {
@@ -4845,10 +4855,10 @@
         const punctPlacement = resolvePreviewPunctPlacement(key, punctPos, keyH);
         if (punctPlacement === 'bottom' && hasAlt) {
           const mainH = Math.max(1, keyH - 12);
-          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, mainH, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
+          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, mainH, previewMainFontMaxForKey(key), fg);
           drawCenteredText(ctx, keySubText(key), keyX, keyY + mainH - 1, keyW, keyH - mainH + 1, 10, previewColors.altTextCss, 500, 6);
         } else {
-          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, keyH, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
+          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, keyH, previewMainFontMaxForKey(key), fg);
         }
         const alt = keySubText(key);
         if (alt && punctPlacement === 'top-right') {

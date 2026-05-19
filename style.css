@@ -864,6 +864,11 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+.layout-key.language-key .layout-key-main {
+  line-height: 1.2;
+  overflow: visible;
+}
+
 .row-add-key,
 .row-delete {
   min-width: 36px;
