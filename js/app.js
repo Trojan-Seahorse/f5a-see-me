@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-19T20:20+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-19T20:28+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -3864,7 +3864,7 @@
         if (gradientDialogState.anchors.length <= 2) return;
         syncGradientAnchorsFromDialog();
         gradientDialogState.anchors.splice(anchorIndex, 1);
-        renderLayoutGradientAnchors();
+        renderLayoutGradientAnchors({ syncFromDom: false });
       });
 
       list.appendChild(rowNode);
