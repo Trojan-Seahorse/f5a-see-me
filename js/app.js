@@ -350,7 +350,7 @@
     popupPointerDragStartX: 0,
     popupPointerDragStartY: 0,
     themeAppSync: {
-      borderEnabled: false,
+      borderEnabled: true,
       borderOutline: false,
       gboardStyle: false,
       keyHGap: 3,
@@ -361,6 +361,7 @@
   };
 
   const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null };
+  const gradientDialogState = { anchors: [] };
   const crcTable = buildCrc32Table();
 
   function el(id) {
@@ -3564,7 +3565,7 @@
     el("layout-key-colors-dialog").showModal();
   }
 
-  function installInlineColorPicker(input, row) {
+  function installInlineColorPicker(input, row, container = el("layout-key-colors-dialog")) {
     if (!window.jscolor || input.jscolor) return;
     try {
       const picker = new window.jscolor(input, {
@@ -3573,7 +3574,7 @@
         showOnClick: true,
         format: "hexa",
         alphaChannel: true,
-        container: el("layout-key-colors-dialog"),
+        container,
         valueElement: null,
         onInput: () => {
           syncArgbInputFromInlinePicker(input);
@@ -3592,7 +3593,7 @@
 
   function positionInlineColorPicker(input, immediate = false) {
     const placePicker = () => {
-      const dialog = el("layout-key-colors-dialog");
+      const dialog = input.closest("dialog") || el("layout-key-colors-dialog");
       const wrap = dialog?.querySelector(".jscolor-wrap");
       if (!wrap || !input.classList.contains("jscolor-active")) return;
       const rect = input.getBoundingClientRect();
@@ -3694,6 +3695,301 @@
     keyDialogState.draft = key;
     refreshKeyDialogSummaries();
     el("layout-key-colors-dialog").close();
+  }
+
+  function openLayoutGradientDialog() {
+    const points = collectLayoutGradientPoints();
+    if (!points.length) {
+      setStatus("layout-json-status", "当前布局没有可处理的按键", "err");
+      return;
+    }
+    gradientDialogState.anchors = buildDefault2dGradientAnchors(points);
+    renderLayoutGradientAnchors();
+    setStatus("layout-gradient-status", "可分别设置背景/文字/副文字/阴影；每个字段都会按二维位置独立插值。", "");
+    el("layout-gradient-dialog").showModal();
+  }
+
+  function collectLayoutGradientPoints() {
+    const rows = getRows();
+    const rowPercents = resolveRowHeightPercents(rows);
+    const rowHeights = rowPercents.map(effectiveRowHeight);
+    const totalHeight = rowHeights.reduce((sum, value) => sum + value, 0);
+    const points = [];
+    let yCursor = 0;
+    rows.forEach((row, rowIndex) => {
+      const widths = resolveRegularRowWidths(row);
+      const rowHeight = rowHeights[rowIndex] || 0;
+      const top = totalHeight > 0 ? yCursor / totalHeight : rowIndex / Math.max(rows.length, 1);
+      const bottom = totalHeight > 0 ? (yCursor + rowHeight) / totalHeight : (rowIndex + 1) / Math.max(rows.length, 1);
+      const centerY = totalHeight > 0 ? (yCursor + rowHeight * 0.5) / totalHeight : (rowIndex + 0.5) / Math.max(rows.length, 1);
+      let xCursor = 0;
+      row.forEach((key, keyIndex) => {
+        const width = Math.max(0, Number(widths[keyIndex]) || 0);
+        const left = xCursor;
+        const right = xCursor + width;
+        const centerX = xCursor + width * 0.5;
+        points.push({ rowIndex, keyIndex, key, x: centerX, y: centerY, left, right, top, bottom });
+        xCursor += width;
+      });
+      yCursor += rowHeight;
+    });
+    return points;
+  }
+
+  function buildDefault2dGradientAnchors(points) {
+    if (!points.length) return [];
+    if (points.length === 1) return [{ keyRef: pointRef(points[0]), colors: defaultAnchorColorsFromPoint(points[0]) }];
+    const sorted = points.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    return [
+      { keyRef: pointRef(first), colors: defaultAnchorColorsFromPoint(first) },
+      { keyRef: pointRef(last), colors: defaultAnchorColorsFromPoint(last) }
+    ];
+  }
+
+  function defaultAnchorColorsFromPoint(point) {
+    const colors = {};
+    keyColorFields.forEach((field) => {
+      const value = formatColorCode(point?.key?.[field.customKey]);
+      colors[field.customKey] = value || "";
+    });
+    return colors;
+  }
+
+  function pointRef(point) {
+    return `${point.rowIndex}:${point.keyIndex}`;
+  }
+
+  function parsePointRef(ref) {
+    const text = String(ref || "");
+    const parts = text.split(":");
+    if (parts.length !== 2) return null;
+    const rowIndex = Number(parts[0]);
+    const keyIndex = Number(parts[1]);
+    if (!Number.isInteger(rowIndex) || !Number.isInteger(keyIndex)) return null;
+    return { rowIndex, keyIndex };
+  }
+
+  function syncGradientAnchorsFromDialog() {
+    const anchorRows = Array.from(el("layout-gradient-anchor-list")?.querySelectorAll(".layout-gradient-anchor-row") || []);
+    if (!anchorRows.length) return;
+    gradientDialogState.anchors = anchorRows.map((rowNode) => {
+      const keyRef = rowNode.querySelector(".layout-gradient-anchor-key")?.value || "";
+      const colors = {};
+      Array.from(rowNode.querySelectorAll(".layout-gradient-anchor-color")).forEach((input) => {
+        const field = input.dataset.field;
+        colors[field] = input.value;
+      });
+      return { keyRef, colors };
+    });
+  }
+
+  function renderLayoutGradientAnchors(options = {}) {
+    if (options.syncFromDom !== false) syncGradientAnchorsFromDialog();
+    const points = collectLayoutGradientPoints();
+    const pointMap = new Map(points.map((point) => [pointRef(point), point]));
+    const list = el("layout-gradient-anchor-list");
+    list.innerHTML = "";
+    if (!points.length) {
+      setStatus("layout-gradient-status", "当前布局没有可处理的按键", "err");
+      return;
+    }
+
+    if (!Array.isArray(gradientDialogState.anchors) || !gradientDialogState.anchors.length) {
+      gradientDialogState.anchors = buildDefault2dGradientAnchors(points);
+    }
+
+    gradientDialogState.anchors = gradientDialogState.anchors.map((anchor, index) => {
+      const parsedRef = parsePointRef(anchor.keyRef);
+      const fallbackRef = pointRef(points[Math.min(index, points.length - 1)]);
+      const keyRef = parsedRef && pointMap.has(anchor.keyRef) ? anchor.keyRef : fallbackRef;
+      const colors = {};
+      keyColorFields.forEach((field) => {
+        const raw = anchor?.colors?.[field.customKey] || "";
+        colors[field.customKey] = raw ? (formatColorCode(raw) || String(raw)) : "";
+      });
+      return { keyRef, colors };
+    });
+
+    gradientDialogState.anchors.forEach((anchor, anchorIndex) => {
+      const rowNode = document.createElement("div");
+      rowNode.className = "layout-gradient-anchor-row";
+      rowNode.innerHTML = `
+        <select class="layout-gradient-anchor-key"></select>
+        <input class="layout-gradient-anchor-color" data-field="backgroundColor" type="text" data-jscolor="{}" placeholder="背景 #AARRGGBB" value="${escapeAttr(anchor.colors.backgroundColor || "")}">
+        <input class="layout-gradient-anchor-color" data-field="textColor" type="text" data-jscolor="{}" placeholder="文字 #AARRGGBB" value="${escapeAttr(anchor.colors.textColor || "")}">
+        <input class="layout-gradient-anchor-color" data-field="altTextColor" type="text" data-jscolor="{}" placeholder="副文字 #AARRGGBB" value="${escapeAttr(anchor.colors.altTextColor || "")}">
+        <input class="layout-gradient-anchor-color" data-field="shadowColor" type="text" data-jscolor="{}" placeholder="阴影 #AARRGGBB" value="${escapeAttr(anchor.colors.shadowColor || "")}">
+        <button type="button" class="layout-gradient-anchor-remove" title="删除锚点">×</button>
+      `;
+
+      const keySel = rowNode.querySelector(".layout-gradient-anchor-key");
+      keySel.innerHTML = points.map((point) => {
+        const label = `第 ${point.rowIndex + 1} 行 / 键 ${point.keyIndex + 1} / ${editorKeyLabel(point.key)}`;
+        return `<option value="${escapeAttr(pointRef(point))}">${escapeHtml(label)}</option>`;
+      }).join("");
+      if (pointMap.has(anchor.keyRef)) keySel.value = anchor.keyRef;
+      keySel.addEventListener("change", () => {
+        gradientDialogState.anchors[anchorIndex].keyRef = keySel.value;
+      });
+
+      Array.from(rowNode.querySelectorAll(".layout-gradient-anchor-color")).forEach((input) => {
+        const field = input.dataset.field;
+        input.addEventListener("input", () => {
+          gradientDialogState.anchors[anchorIndex].colors[field] = input.value;
+        });
+        input.addEventListener("pointerdown", () => syncInlinePickerFromArgbInput(input, false));
+        input.addEventListener("click", () => positionInlineColorPicker(input));
+        input.addEventListener("change", () => {
+          if (!input.value.trim()) {
+            gradientDialogState.anchors[anchorIndex].colors[field] = "";
+            return;
+          }
+          syncInlinePickerFromArgbInput(input);
+          gradientDialogState.anchors[anchorIndex].colors[field] = input.value;
+        });
+        installInlineColorPicker(input, rowNode, el("layout-gradient-dialog"));
+      });
+
+      const removeBtn = rowNode.querySelector(".layout-gradient-anchor-remove");
+      removeBtn.disabled = gradientDialogState.anchors.length <= 2;
+      removeBtn.addEventListener("click", () => {
+        if (gradientDialogState.anchors.length <= 2) return;
+        syncGradientAnchorsFromDialog();
+        gradientDialogState.anchors.splice(anchorIndex, 1);
+        renderLayoutGradientAnchors();
+      });
+
+      list.appendChild(rowNode);
+    });
+  }
+
+  function addLayoutGradientAnchor() {
+    syncGradientAnchorsFromDialog();
+    const points = collectLayoutGradientPoints();
+    if (!points.length) return;
+    const pick = points[Math.min(gradientDialogState.anchors.length, points.length - 1)];
+    gradientDialogState.anchors.push({
+      keyRef: pointRef(pick),
+      colors: { backgroundColor: "", textColor: "", altTextColor: "", shadowColor: "" }
+    });
+    renderLayoutGradientAnchors({ syncFromDom: false });
+  }
+
+  function applyLayoutGradientColors() {
+    const points = collectLayoutGradientPoints();
+    if (!points.length) throw new Error("当前布局没有可处理的按键");
+    const pointMap = new Map(points.map((point) => [pointRef(point), point]));
+    const anchorRows = Array.from(el("layout-gradient-anchor-list").querySelectorAll(".layout-gradient-anchor-row"));
+    const parsedAnchors = anchorRows.map((rowNode) => {
+      const keyRef = rowNode.querySelector(".layout-gradient-anchor-key").value;
+      const point = pointMap.get(keyRef);
+      if (!point) throw new Error("锚点按键位置无效");
+      const colors = {};
+      Array.from(rowNode.querySelectorAll(".layout-gradient-anchor-color")).forEach((input) => {
+        const field = input.dataset.field;
+        const value = input.value.trim();
+        if (!value) {
+          colors[field] = null;
+          return;
+        }
+        const parsed = parseColorValue(value);
+        if (parsed == null) throw new Error(`颜色格式无效：${value}`);
+        colors[field] = parsed >>> 0;
+      });
+      return { point, colors };
+    });
+
+    if (parsedAnchors.length < 2) throw new Error("至少需要两个锚点");
+    const uniqueRefs = new Set(parsedAnchors.map((entry) => pointRef(entry.point)));
+    if (uniqueRefs.size !== parsedAnchors.length) throw new Error("同一个按键不能设置多个锚点");
+
+    let appliedCount = 0;
+    let skippedCount = 0;
+    keyColorFields.forEach((field) => {
+      const channelAnchors = parsedAnchors
+        .filter((entry) => entry.colors[field.customKey] != null)
+        .filter((entry) => !field.supportedTypes || field.supportedTypes.has(entry.point.key?.type))
+        .map((entry) => ({
+          x: entry.point.x,
+          y: entry.point.y,
+          left: entry.point.left,
+          right: entry.point.right,
+          top: entry.point.top,
+          bottom: entry.point.bottom,
+          color: entry.colors[field.customKey]
+        }));
+      if (!channelAnchors.length) return;
+      const bounds = calculateAnchorBounds(channelAnchors);
+
+      points.forEach((point) => {
+        const key = point.key;
+        if (!key) return;
+        if (field.supportedTypes && !field.supportedTypes.has(key.type)) {
+          skippedCount += 1;
+          return;
+        }
+        if (!isPointInsideBounds(point, bounds)) return;
+        const color = interpolateColorByDistance(point.x, point.y, channelAnchors);
+        key[field.customKey] = color;
+        delete key[field.monetKey];
+        appliedCount += 1;
+      });
+    });
+
+    if (!appliedCount) throw new Error("没有可应用颜色，请至少在一个字段中填写两个有效锚点颜色");
+    syncLayoutUiFromState();
+    const skipText = skippedCount ? `，跳过 ${skippedCount} 次不支持字段的按键着色` : "";
+    setStatus("layout-json-status", `已完成二维渐变着色，共应用 ${appliedCount} 次${skipText}`, "ok");
+    el("layout-gradient-dialog").close();
+  }
+
+  function interpolateColorByDistance(x, y, anchors) {
+    let weightSum = 0;
+    let aSum = 0;
+    let rSum = 0;
+    let gSum = 0;
+    let bSum = 0;
+    for (const anchor of anchors) {
+      const dx = x - anchor.x;
+      const dy = y - anchor.y;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 <= 1e-8) return toSignedInt32(anchor.color >>> 0);
+      const w = 1 / dist2;
+      const c = anchor.color >>> 0;
+      aSum += ((c >>> 24) & 0xff) * w;
+      rSum += ((c >>> 16) & 0xff) * w;
+      gSum += ((c >>> 8) & 0xff) * w;
+      bSum += (c & 0xff) * w;
+      weightSum += w;
+    }
+    if (!weightSum) return toSignedInt32(0xffffffff);
+    const a = Math.round(aSum / weightSum);
+    const r = Math.round(rSum / weightSum);
+    const g = Math.round(gSum / weightSum);
+    const b = Math.round(bSum / weightSum);
+    const unsigned = ((((a & 0xff) << 24) >>> 0) | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff)) >>> 0;
+    return toSignedInt32(unsigned);
+  }
+
+  function calculateAnchorBounds(anchors) {
+    const lefts = anchors.map((anchor) => anchor.left ?? anchor.x);
+    const rights = anchors.map((anchor) => anchor.right ?? anchor.x);
+    const tops = anchors.map((anchor) => anchor.top ?? anchor.y);
+    const bottoms = anchors.map((anchor) => anchor.bottom ?? anchor.y);
+    return {
+      minX: Math.min(...lefts),
+      maxX: Math.max(...rights),
+      minY: Math.min(...tops),
+      maxY: Math.max(...bottoms)
+    };
+  }
+
+  function isPointInsideBounds(point, bounds) {
+    const epsilon = 1e-6;
+    return point.left < bounds.maxX - epsilon && point.right > bounds.minX + epsilon
+      && point.top < bounds.maxY - epsilon && point.bottom > bounds.minY + epsilon;
   }
 
   function openComposeDialog() {
@@ -4468,7 +4764,16 @@
     el("layout-add-dialog-cancel").addEventListener("click", () => el("layout-add-dialog").close());
     el("layout-rename-layout").addEventListener("click", renameLayout);
     el("layout-delete-layout").addEventListener("click", handlePrimaryDeleteLayout);
-    el("layout-open-theme").addEventListener("click", () => setActiveTab("tab-theme"));
+    el("layout-open-gradient").addEventListener("click", openLayoutGradientDialog);
+    el("layout-gradient-anchor-add").addEventListener("click", addLayoutGradientAnchor);
+    el("layout-gradient-cancel").addEventListener("click", () => el("layout-gradient-dialog").close());
+    el("layout-gradient-apply").addEventListener("click", () => {
+      try {
+        applyLayoutGradientColors();
+      } catch (err) {
+        setStatus("layout-gradient-status", `应用失败：${err.message}`, "err");
+      }
+    });
     // layout-add-submode and layout-delete-submode controls removed from DOM; listeners omitted
     el("layout-reset").addEventListener("click", () => {
       state.layout = deepClone(state.initialLayout);

@@ -1091,6 +1091,39 @@ input[type="checkbox"] {
   width: 100%;
 }
 
+.layout-gradient-anchor-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.layout-gradient-anchor-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) repeat(4, minmax(120px, 1fr)) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.layout-gradient-anchor-row .layout-gradient-anchor-color,
+.layout-gradient-anchor-row .layout-gradient-anchor-key {
+  width: 100%;
+}
+
+.layout-gradient-anchor-remove {
+  min-width: 40px;
+  padding: 8px 12px;
+}
+
+@media (max-width: 640px) {
+  .layout-gradient-anchor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .layout-gradient-anchor-remove {
+    width: 100%;
+  }
+}
+
 .checker-preview {
   width: 120px;
   height: 44px;

@@ -58,7 +58,7 @@
                 <button id="layout-rename-layout">重命名布局</button>
                 <button id="layout-reset">重置示例</button>
                 <button id="layout-download-json">导出 JSON</button>
-                <button id="layout-open-theme" type="button">主题编辑</button>
+                <button id="layout-open-gradient" type="button">按键渐变着色</button>
                 <label class="file-button">
                   导入 JSON
                   <input id="layout-import-file" type="file" accept="application/json,.json">
@@ -379,6 +379,22 @@
       <div class="toolbar">
         <button type="button" id="layout-key-colors-cancel">取消</button>
         <button type="button" id="layout-key-colors-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="layout-gradient-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>按键渐变着色</h3></div>
+      <div class="status">先指定几个锚点按键，再分别填写背景/文字/副文字/阴影颜色；程序会按按键二维位置插值到全部按键。</div>
+      <div id="layout-gradient-anchor-list" class="layout-gradient-anchor-list"></div>
+      <div class="toolbar">
+        <button type="button" id="layout-gradient-anchor-add">+ 添加锚点</button>
+      </div>
+      <div id="layout-gradient-status" class="status"></div>
+      <div class="toolbar">
+        <button type="button" id="layout-gradient-cancel">取消</button>
+        <button type="button" id="layout-gradient-apply">应用二维渐变</button>
       </div>
     </form>
   </dialog>
