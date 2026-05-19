@@ -31,14 +31,23 @@ body {
   right: 0;
   z-index: 10;
   min-height: var(--topbar-height);
-  padding: 16px 20px 10px;
+  padding: 10px 16px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 32px;
+  font-size: clamp(20px, 4.6vw, 28px);
+  line-height: 1.15;
+}
+
+.topbar h2 {
+  margin: 4px 0 0;
+  font-size: clamp(12px, 2.4vw, 15px);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--sub);
 }
 
 .topbar p {
@@ -281,6 +290,7 @@ input[type="checkbox"] {
   display: grid;
   gap: 10px;
   margin-top: 10px;
+  min-width: 0;
 }
 
 .popup-entry-row {
@@ -291,45 +301,80 @@ input[type="checkbox"] {
   border-radius: 8px;
   padding: 8px 10px;
   background: #10131b;
+  width: 100%;
+  min-width: 0;
 }
 
 .popup-entry-key {
   flex: 0 0 auto;
-  border: 1px solid #4f8cff;
-  background: #16305f;
-  color: #d6e6ff;
+  min-height: 34px;
+  min-width: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #303645;
+  color: var(--text);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .18);
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
-  padding: 8px 12px;
-  border-radius: 14px;
+  padding: 6px 12px;
 }
 
 .popup-entry-values {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  align-content: flex-start;
   gap: 8px;
-  overflow-x: auto;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: normal;
+  min-width: 0;
 }
 
 .popup-chip {
   flex: 0 0 auto;
-  border: 1px solid #7b8aa8;
-  border-radius: 16px;
-  padding: 6px 12px;
-  background: #283044;
-  color: #edf2ff;
+  min-height: 34px;
+  min-width: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #242a38;
+  color: var(--text);
   font-size: 17px;
   line-height: 1;
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+  touch-action: manipulation;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .18);
+  transition: transform .12s ease, opacity .12s ease, border-color .12s ease, background-color .12s ease;
 }
 
 .popup-chip-add {
-  background: #1f6a4d;
-  border-color: #43a57b;
-  color: #dcffe5;
+  background: #263047;
+  border-color: var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.popup-entry-add {
+  flex: 0 0 auto;
+}
+
+.popup-chip.dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+.popup-chip.drop-before {
+  border-left-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.popup-chip.drop-after {
+  border-right-color: var(--primary);
+  box-shadow: inset -3px 0 0 var(--primary);
 }
 
 .popup-entry-delete {
@@ -483,23 +528,61 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+.theme-preview-mobile-card {
+  display: none;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #10131b;
+}
+
+.theme-preview-mobile-card > summary {
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.theme-preview-extra-mobile {
+  display: grid;
+  margin-top: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .theme-preview-extra-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 12px;
   min-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .theme-preview-extra-item .label {
-  display: block;
-  color: var(--sub);
-  margin-bottom: 2px;
+  display: inline;
+  color: inherit;
+  margin-bottom: 0;
+  flex: 0 0 auto;
+  font-weight: 600;
 }
 
 .theme-preview-extra-item .value {
-  display: block;
+  display: inline;
+  color: inherit;
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-preview-extra-item.is-foreground-tone .label,
+.theme-preview-extra-item.is-foreground-tone .value {
+  font-weight: 800;
 }
 
 @media (max-width: 1100px) {
@@ -1146,13 +1229,45 @@ input[type="checkbox"] {
     padding: 8px 12px 6px;
   }
 
+  .preview-shell {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .preview-center {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .layout-row .keys {
+    width: 100%;
+    max-width: none;
+  }
+
   .theme-preview-extra-side {
     display: none;
   }
 
   .layout-preview {
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
     padding: 8px;
+  }
+
+  .popup-entry-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .popup-entry-values {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .theme-preview-mobile-card {
+    display: block;
   }
 }
 

@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-19T00:22+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-19T09:34+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -339,7 +339,15 @@
     macroStepDragStartX: 0,
     macroStepDragStartY: 0,
     macroEventEditor: { eventName: "tap", steps: [] },
-    popupQr: { chunks: [], index: 0, transferId: "", popupSignature: "" }
+    popupQr: { chunks: [], index: 0, transferId: "", popupSignature: "" },
+    popupCandidateDrag: null,
+    popupCandidateDragMoved: false,
+    popupChipClickSuppressedUntil: 0,
+    popupPointerDragPointerId: null,
+    popupPointerDragHoldTimer: null,
+    popupPointerDragActive: false,
+    popupPointerDragStartX: 0,
+    popupPointerDragStartY: 0
   };
 
   const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null };
@@ -418,6 +426,23 @@
     const g = (u >>> 8) & 0xff;
     const b = u & 0xff;
     return `rgba(${r}, ${g}, ${b}, ${Math.round(a * 1000) / 1000})`;
+  }
+
+  function isLightThemeColor(color) {
+    const u = (Number(color) || 0) >>> 0;
+    const r = (u >>> 16) & 0xff;
+    const g = (u >>> 8) & 0xff;
+    const b = u & 0xff;
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    return luma >= 160;
+  }
+
+  function contrastTextForBackground(color) {
+    return isLightThemeColor(color) ? "rgba(0, 0, 0, 0.92)" : "rgba(255, 255, 255, 0.94)";
+  }
+
+  function contrastBackgroundForForeground(color) {
+    return isLightThemeColor(color) ? "rgba(0, 0, 0, 0.88)" : "rgba(255, 255, 255, 0.92)";
   }
 
   function resolveThemeTokenColor(token) {
@@ -707,32 +732,31 @@
   function renderThemeSupplementPreview() {
     const leftRoot = el("theme-preview-extra-left");
     const rightRoot = el("theme-preview-extra-right");
-    if (!leftRoot || !rightRoot) return;
-    const colors = {
-      candidateTextColor: argbToCss(resolveThemeTokenColor("candidateTextColor")),
-      candidateLabelColor: argbToCss(resolveThemeTokenColor("candidateLabelColor")),
-      candidateCommentColor: argbToCss(resolveThemeTokenColor("candidateCommentColor")),
-      popupBackgroundColor: argbToCss(resolveThemeTokenColor("popupBackgroundColor")),
-      popupTextColor: argbToCss(resolveThemeTokenColor("popupTextColor")),
-      clipboardEntryColor: argbToCss(resolveThemeTokenColor("clipboardEntryColor")),
-      genericActiveBackgroundColor: argbToCss(resolveThemeTokenColor("genericActiveBackgroundColor")),
-      genericActiveForegroundColor: argbToCss(resolveThemeTokenColor("genericActiveForegroundColor")),
-      barColor: argbToCss(resolveThemeTokenColor("barColor")),
-      backgroundColor: argbToCss(resolveThemeTokenColor("backgroundColor"))
+    const mobileRoot = el("theme-preview-extra-mobile");
+    if (!leftRoot && !rightRoot && !mobileRoot) return;
+    const buildBackgroundItem = (label, value, tokenColor) => {
+      const bg = argbToCss(tokenColor);
+      const text = contrastTextForBackground(tokenColor);
+      return `<div class="theme-preview-extra-item" style="background:${escapeAttr(bg)};color:${escapeAttr(text)}"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>`;
     };
-    const itemsHtml = `
-      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.backgroundColor)}"><span class="label">背景</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Background</span></div>
-      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.barColor)}"><span class="label">工具栏</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Toolbar</span></div>
-      <div class="theme-preview-extra-item"><span class="label">候选文字</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Candidate</span></div>
-      <div class="theme-preview-extra-item"><span class="label">候选标签</span><span class="value" style="color:${escapeAttr(colors.candidateLabelColor)}">Label</span></div>
-      <div class="theme-preview-extra-item"><span class="label">候选注释</span><span class="value" style="color:${escapeAttr(colors.candidateCommentColor)}">Comment</span></div>
-      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.popupBackgroundColor)}"><span class="label">弹出文字</span><span class="value" style="color:${escapeAttr(colors.popupTextColor)}">Popup</span></div>
-      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.clipboardEntryColor)}"><span class="label">剪贴板项</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Clipboard</span></div>
-      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.genericActiveBackgroundColor)}"><span class="label">激活态</span><span class="value" style="color:${escapeAttr(colors.genericActiveForegroundColor)}">Active</span></div>
-    `;
-    const parts = itemsHtml.trim().split(/(?=<div class="theme-preview-extra-item")/);
-    leftRoot.innerHTML = parts.slice(0, 4).join("");
-    rightRoot.innerHTML = parts.slice(4, 8).join("");
+    const buildForegroundItem = (label, value, tokenColor) => {
+      const fg = argbToCss(tokenColor);
+      const bg = contrastBackgroundForForeground(tokenColor);
+      return `<div class="theme-preview-extra-item is-foreground-tone" style="background:${escapeAttr(bg)};color:${escapeAttr(fg)}"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>`;
+    };
+    const items = [
+      buildBackgroundItem("背景", "Background", resolveThemeTokenColor("backgroundColor")),
+      buildBackgroundItem("工具栏", "Toolbar", resolveThemeTokenColor("barColor")),
+      buildForegroundItem("候选文字", "Candidate", resolveThemeTokenColor("candidateTextColor")),
+      buildForegroundItem("候选标签", "Label", resolveThemeTokenColor("candidateLabelColor")),
+      buildForegroundItem("候选注释", "Comment", resolveThemeTokenColor("candidateCommentColor")),
+      buildForegroundItem("弹出文字", "Popup", resolveThemeTokenColor("popupTextColor")),
+      buildBackgroundItem("剪贴板项", "Clipboard", resolveThemeTokenColor("clipboardEntryColor")),
+      buildBackgroundItem("激活态", "Active", resolveThemeTokenColor("genericActiveBackgroundColor"))
+    ];
+    if (leftRoot) leftRoot.innerHTML = items.slice(0, 4).join("");
+    if (rightRoot) rightRoot.innerHTML = items.slice(4, 8).join("");
+    if (mobileRoot) mobileRoot.innerHTML = items.join("");
   }
 
   function normalizePopupEntries(raw) {
@@ -812,6 +836,73 @@
     }
   }
 
+  function movePopupCandidate(key, fromIndex, toIndex) {
+    const values = state.popupEntries[key];
+    if (!Array.isArray(values)) return false;
+    if (fromIndex === toIndex) return false;
+    if (fromIndex < 0 || fromIndex >= values.length) return false;
+    let insertIndex = toIndex;
+    if (insertIndex < 0) insertIndex = 0;
+    if (insertIndex > values.length) insertIndex = values.length;
+    const [moved] = values.splice(fromIndex, 1);
+    if (fromIndex < insertIndex) insertIndex -= 1;
+    if (insertIndex < 0) insertIndex = 0;
+    if (insertIndex > values.length) insertIndex = values.length;
+    values.splice(insertIndex, 0, moved);
+    state.popupEntries = normalizePopupEntries(state.popupEntries);
+    return true;
+  }
+
+  function previewMovePopupCandidate(key, toIndex) {
+    const drag = state.popupCandidateDrag;
+    if (!drag || drag.key !== key) return false;
+    const moved = movePopupCandidate(key, drag.index, toIndex);
+    if (!moved) return false;
+    let nextIndex = Math.max(0, Math.min(toIndex, state.popupEntries[key]?.length ?? 0));
+    if (drag.index < nextIndex) nextIndex -= 1;
+    state.popupCandidateDrag = { key, index: Math.max(0, nextIndex) };
+    state.popupCandidateDragMoved = true;
+    renderPopupEditor();
+    return true;
+  }
+
+  function popupCandidateInsertionIndexFromPointer(key, clientX, clientY) {
+    const wraps = Array.from(document.querySelectorAll(".popup-entry-values"));
+    const wrap = wraps.find((node) => node.dataset.popupKey === key);
+    if (!wrap) return null;
+    const chips = Array.from(wrap.querySelectorAll(".popup-chip"));
+    if (!chips.length) return 0;
+    let bestIndex = chips.length;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    chips.forEach((chip, index) => {
+      const rect = chip.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = centerX - clientX;
+      const dy = centerY - clientY;
+      const distance = dx * dx + dy * dy;
+      if (distance >= bestDistance) return;
+      bestDistance = distance;
+      bestIndex = clientX > centerX ? index + 1 : index;
+    });
+    return bestIndex;
+  }
+
+  function clearPopupPointerDragHoldTimer() {
+    if (state.popupPointerDragHoldTimer != null) {
+      clearTimeout(state.popupPointerDragHoldTimer);
+      state.popupPointerDragHoldTimer = null;
+    }
+  }
+
+  function resetPopupPointerDragState() {
+    clearPopupPointerDragHoldTimer();
+    state.popupPointerDragPointerId = null;
+    state.popupPointerDragActive = false;
+    state.popupPointerDragStartX = 0;
+    state.popupPointerDragStartY = 0;
+  }
+
   function renderPopupEditor() {
     const root = el("popup-entry-list");
     if (!root) return;
@@ -827,16 +918,23 @@
       row.innerHTML = `
         <button type="button" class="popup-entry-key" data-action="rename">${escapeHtml(key)}</button>
         <div class="popup-entry-values"></div>
-        <button type="button" class="popup-entry-delete" data-action="delete">删除映射</button>
+        <button type="button" class="popup-chip popup-chip-add popup-entry-add" data-action="add-candidate">+</button>
+        <button type="button" class="popup-entry-delete" data-action="delete">🗑</button>
       `;
       const valuesWrap = row.querySelector(".popup-entry-values");
+      valuesWrap.dataset.popupKey = key;
       values.forEach((value, index) => {
         const chip = document.createElement("button");
         chip.type = "button";
         chip.className = "popup-chip";
+        if (state.popupCandidateDrag?.key === key && state.popupCandidateDrag?.index === index) {
+          chip.classList.add("dragging");
+        }
         chip.textContent = value;
         chip.title = "点击编辑，右键删除";
+        chip.draggable = true;
         chip.addEventListener("click", () => {
+          if (Date.now() < state.popupChipClickSuppressedUntil) return;
           const next = prompt(`编辑「${key}」的候选字符`, value);
           if (next == null) return;
           const normalized = next.trim();
@@ -857,12 +955,55 @@
           syncPopupJsonFromState();
           setStatus("popup-editor-status", `已删除 ${key} 的候选字符`, "ok");
         });
+        chip.addEventListener("dragstart", (ev) => {
+          state.popupCandidateDrag = { key, index };
+          state.popupCandidateDragMoved = false;
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = "move";
+            ev.dataTransfer.setData("text/plain", `${key}:${index}`);
+          }
+        });
+        chip.addEventListener("dragend", () => {
+          state.popupCandidateDrag = null;
+          if (state.popupCandidateDragMoved) {
+            state.popupChipClickSuppressedUntil = Date.now() + 250;
+            syncPopupJsonFromState();
+            setStatus("popup-editor-status", `已调整 ${key} 的候选顺序`, "ok");
+          }
+          state.popupCandidateDragMoved = false;
+          renderPopupEditor();
+        });
+        chip.addEventListener("dragover", (ev) => {
+          const drag = state.popupCandidateDrag;
+          if (!drag || drag.key !== key) return;
+          ev.preventDefault();
+          const rect = chip.getBoundingClientRect();
+          const placeAfter = ev.clientX > rect.left + rect.width / 2;
+          const targetIndex = index + (placeAfter ? 1 : 0);
+          previewMovePopupCandidate(key, targetIndex);
+        });
+        chip.addEventListener("drop", (ev) => {
+          const drag = state.popupCandidateDrag;
+          if (!drag || drag.key !== key) return;
+          ev.preventDefault();
+        });
+        chip.addEventListener("pointerdown", (ev) => {
+          if (ev.button !== 0 || ev.pointerType === "mouse") return;
+          resetPopupPointerDragState();
+          state.popupPointerDragPointerId = ev.pointerId;
+          state.popupPointerDragStartX = ev.clientX;
+          state.popupPointerDragStartY = ev.clientY;
+          state.popupPointerDragHoldTimer = setTimeout(() => {
+            if (state.popupPointerDragPointerId !== ev.pointerId) return;
+            state.popupCandidateDrag = { key, index };
+            state.popupCandidateDragMoved = false;
+            state.popupPointerDragActive = true;
+            renderPopupEditor();
+          }, 120);
+        });
         valuesWrap.appendChild(chip);
       });
-      const addChip = document.createElement("button");
-      addChip.type = "button";
-      addChip.className = "popup-chip popup-chip-add";
-      addChip.textContent = "+ 候选";
+      const addChip = row.querySelector('[data-action="add-candidate"]');
       addChip.addEventListener("click", () => {
         const next = prompt(`添加「${key}」的候选字符`);
         if (next == null) return;
@@ -874,7 +1015,17 @@
         syncPopupJsonFromState();
         setStatus("popup-editor-status", `已添加 ${key} 的候选字符`, "ok");
       });
-      valuesWrap.appendChild(addChip);
+      addChip.addEventListener("dragover", (ev) => {
+        const drag = state.popupCandidateDrag;
+        if (!drag || drag.key !== key) return;
+        ev.preventDefault();
+        previewMovePopupCandidate(key, state.popupEntries[key]?.length ?? 0);
+      });
+      addChip.addEventListener("drop", (ev) => {
+        const drag = state.popupCandidateDrag;
+        if (!drag || drag.key !== key) return;
+        ev.preventDefault();
+      });
       row.querySelector('[data-action="rename"]').addEventListener("click", () => {
         const next = prompt("编辑映射键名", key);
         if (next == null) return;
@@ -2097,6 +2248,20 @@
   }
 
   document.addEventListener("pointermove", (ev) => {
+    if (state.popupPointerDragPointerId === ev.pointerId) {
+      if (!state.popupPointerDragActive) {
+        const dx = Math.abs(ev.clientX - state.popupPointerDragStartX);
+        const dy = Math.abs(ev.clientY - state.popupPointerDragStartY);
+        if (dx > 8 || dy > 8) resetPopupPointerDragState();
+      } else {
+        ev.preventDefault();
+        const key = state.popupCandidateDrag?.key;
+        if (key) {
+          const insertionIndex = popupCandidateInsertionIndexFromPointer(key, ev.clientX, ev.clientY);
+          if (insertionIndex != null) previewMovePopupCandidate(key, insertionIndex);
+        }
+      }
+    }
     if (state.macroStepDragPointerId !== ev.pointerId) return;
     if (!state.macroStepDragActive) {
       const dx = Math.abs(ev.clientX - state.macroStepDragStartX);
@@ -2111,6 +2276,19 @@
   });
 
   document.addEventListener("pointerup", (ev) => {
+    if (state.popupPointerDragPointerId === ev.pointerId) {
+      const dragKey = state.popupCandidateDrag?.key || "";
+      const moved = state.popupPointerDragActive && state.popupCandidateDragMoved;
+      resetPopupPointerDragState();
+      state.popupCandidateDrag = null;
+      if (moved) {
+        state.popupChipClickSuppressedUntil = Date.now() + 250;
+        syncPopupJsonFromState();
+        if (dragKey) setStatus("popup-editor-status", `已调整 ${dragKey} 的候选顺序`, "ok");
+      }
+      state.popupCandidateDragMoved = false;
+      renderPopupEditor();
+    }
     if (state.macroStepDragPointerId !== ev.pointerId) return;
     const wasActive = state.macroStepDragActive;
     resetMacroStepDragState();
@@ -2118,6 +2296,12 @@
   });
 
   document.addEventListener("pointercancel", (ev) => {
+    if (state.popupPointerDragPointerId === ev.pointerId) {
+      resetPopupPointerDragState();
+      state.popupCandidateDrag = null;
+      state.popupCandidateDragMoved = false;
+      renderPopupEditor();
+    }
     if (state.macroStepDragPointerId !== ev.pointerId) return;
     const wasActive = state.macroStepDragActive;
     resetMacroStepDragState();
@@ -4947,13 +5131,10 @@
     const isStale = state.qr.layoutSignature && state.qr.layoutSignature !== currentLayoutSignature();
     if (isStale) state.qr = { chunks: [], index: 0, transferId: "", layoutSignature: "" };
     const has = state.qr.chunks.length > 0;
-    const wrap = el("layout-qr-wrap");
-    if (wrap) {
-      wrap.hidden = !has;
-      wrap.style.display = has ? "" : "none";
-    }
-    el("layout-qr-index").textContent = `${has ? state.qr.index + 1 : 0} / ${state.qr.chunks.length}`;
     const canvas = el("layout-qr-canvas");
+    const idx = el("layout-qr-index");
+    if (idx) idx.textContent = `${has ? state.qr.index + 1 : 0} / ${state.qr.chunks.length}`;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!has) return;
@@ -5003,22 +5184,36 @@
     if (!dialog.open) dialog.showModal();
   }
 
+  function openLayoutQrPreviewDialog() {
+    const dialog = el("layout-qr-dialog");
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+  }
+
   function setupQrActions() {
-    el("layout-generate-qr").addEventListener("click", async () => {
+    el("layout-share-current").addEventListener("click", async () => {
       try {
         const bundle = await generateLayoutQrBundle();
         state.qr = { chunks: bundle.chunks, index: 0, transferId: bundle.transferId, layoutSignature: currentLayoutSignature() };
         setStatus("layout-qr-meta", `布局二维码：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
         updateQrUi();
+        openLayoutQrPreviewDialog();
       } catch (e) {
-        setStatus("layout-qr-meta", `生成失败：${e.message}`, "err");
+        setStatus("layout-qr-meta", `布局分享失败：${e.message}`, "err");
       }
     });
-    el("layout-share-qr-image").addEventListener("click", async () => {
+    el("layout-download-qr-preview").addEventListener("click", async () => {
+      if (!state.qr.chunks.length) {
+        setStatus("layout-qr-meta", "请先分享布局生成二维码", "err");
+        return;
+      }
       try {
-        const bundle = await generateLayoutQrBundle();
-        state.qr = { chunks: bundle.chunks, index: 0, transferId: bundle.transferId, layoutSignature: currentLayoutSignature() };
-        updateQrUi();
+        const bundle = {
+          chunks: state.qr.chunks.slice(),
+          total: state.qr.chunks.length,
+          transferId: state.qr.transferId,
+          profile: el("layout-profile")?.value?.trim() || null
+        };
         await downloadQrLongImage(bundle, bundle.profile);
         setStatus("layout-qr-meta", `已下载 PNG 长图：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
       } catch (e) {
@@ -5217,6 +5412,13 @@
       previewPanel.addEventListener("toggle", () => {
         updateFixedChromeMetrics();
         syncJsonEditorHeight();
+      });
+    }
+    const mobilePreviewCard = el("theme-preview-mobile-card");
+    if (mobilePreviewCard) {
+      mobilePreviewCard.addEventListener("toggle", () => {
+        updateFixedChromeMetrics();
+        requestAnimationFrame(fitLayoutPreviewText);
       });
     }
     state.layoutHeightObserver = new ResizeObserver(() => syncJsonEditorHeight());

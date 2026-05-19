@@ -23,6 +23,10 @@
         </div>
         <div id="theme-preview-extra-right" class="theme-preview-extra-side"></div>
       </div>
+      <details class="theme-preview-mobile-card" id="theme-preview-mobile-card">
+        <summary>主题预览色块</summary>
+        <div id="theme-preview-extra-mobile" class="theme-preview-extra-mobile"></div>
+      </details>
     </details>
 
     <div class="tabs" role="tablist" aria-label="编辑器功能">
@@ -76,20 +80,11 @@
                   <input id="layout-profile" type="text" placeholder="default">
                 </div>
                 <div class="toolbar">
-                  <button id="layout-generate-qr">生成二维码</button>
-                  <button id="layout-share-qr-image">下载二维码长图</button>
-                  <button id="layout-import-qr-image">导入二维码长图</button>
+                  <button id="layout-share-current">分享布局</button>
+                  <button id="layout-import-qr-image">导入二维码</button>
                   <input id="layout-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
                 </div>
                 <div id="layout-qr-meta" class="status"></div>
-                <div class="qr-wrap" id="layout-qr-wrap" hidden>
-                  <canvas id="layout-qr-canvas" width="640" height="640"></canvas>
-                  <div class="qr-nav">
-                    <button id="layout-prev-qr">上一张</button>
-                    <span id="layout-qr-index">0 / 0</span>
-                    <button id="layout-next-qr">下一张</button>
-                  </div>
-                </div>
               </div>
             </details>
           </div>
@@ -110,14 +105,14 @@
         <details class="card theme-main-card" open>
           <summary>主题管理与编辑</summary>
           <div class="toolbar details-toolbar">
-            <button id="theme-create-from-current" type="button">从当前复制新建主题</button>
-            <button id="theme-rename-custom" type="button">修改当前自定义主题名称</button>
-            <button id="theme-delete-custom" type="button">删除当前自定义主题</button>
-            <button id="theme-import-background" type="button">添加/修改背景图片</button>
-            <button id="theme-clear-background" type="button">清除背景图片</button>
-            <button id="theme-export-json" type="button">导出主题 JSON</button>
-            <button id="theme-share-current" type="button">分享当前激活主题</button>
-            <button id="theme-import-shared" type="button">导入主题（长图/ZIP）</button>
+            <button id="theme-create-from-current" type="button">复制主题</button>
+            <button id="theme-rename-custom" type="button">主题改名</button>
+            <button id="theme-delete-custom" type="button">删除主题</button>
+            <button id="theme-import-background" type="button">修改背景</button>
+            <button id="theme-clear-background" type="button">清除背景</button>
+            <button id="theme-export-json" type="button">导出JSON</button>
+            <button id="theme-share-current" type="button">分享主题</button>
+            <button id="theme-import-shared" type="button">导入主题</button>
             <input id="theme-import-background-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
             <input id="theme-import-file" type="file" accept="application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
           </div>
@@ -146,7 +141,7 @@
             <button id="popup-export-json" type="button">导出 JSON</button>
             <button id="popup-import-json" type="button">导入 JSON</button>
             <button id="popup-generate-qr" type="button">生成二维码</button>
-            <button id="popup-import-qr-image" type="button">导入二维码长图</button>
+            <button id="popup-import-qr-image" type="button">导入二维码</button>
             <input id="popup-import-file" type="file" accept="application/json,.json" hidden>
             <input id="popup-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
           </div>
@@ -396,6 +391,22 @@
     </form>
   </dialog>
 
+  <dialog id="layout-qr-dialog" class="editor-dialog sub-dialog qr-preview-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>布局二维码预览</h3></div>
+      <div class="qr-wrap qr-wrap-modal">
+        <canvas id="layout-qr-canvas" width="640" height="640"></canvas>
+        <div class="qr-nav">
+          <button id="layout-prev-qr" type="button">上一张</button>
+          <span id="layout-qr-index">0 / 0</span>
+          <button id="layout-next-qr" type="button">下一张</button>
+          <button id="layout-download-qr-preview" type="button">下载长图</button>
+          <button id="layout-close-qr-preview" type="submit">关闭</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="popup-qr-dialog" class="editor-dialog sub-dialog qr-preview-dialog">
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>弹出字符二维码预览</h3></div>
@@ -419,6 +430,6 @@
   <script src="./js/qr-import.js?v=20260518215754"></script>
   <script src="./js/jscolor/jscolor.js?v=20260516-1032"></script>
   <script src="./js/key-editor-bindings.js?v=20260518215754"></script>
-  <script src="./js/app.js?v=20260519002200"></script>
+  <script src="./js/app.js?v=20260519093400"></script>
 </body>
 </html>
