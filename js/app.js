@@ -68,7 +68,7 @@
   };
 
   const keyTypes = [
-    "AlphabetKey", "CapsKey", "LayoutSwitchKey", "LayerSwitchKey", "CommaKey", "LanguageKey",
+    "AlphabetKey", "CapsKey", "LayoutSwitchKey", "CommaKey", "LanguageKey",
     "SpaceKey", "SymbolKey", "ReturnKey", "BackspaceKey", "MacroKey"
   ];
 
@@ -2678,12 +2678,12 @@
 
   function keyTypeCapabilities(type) {
     const displayTextTypes = new Set(["AlphabetKey", "MacroKey"]);
-    const swipeTypes = new Set(["LayoutSwitchKey", "LayerSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey"]);
-    const labelTypes = new Set(["LayoutSwitchKey", "LayerSwitchKey", "SymbolKey", "MacroKey"]);
+    const swipeTypes = new Set(["LayoutSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey"]);
+    const labelTypes = new Set(["LayoutSwitchKey", "SymbolKey", "MacroKey"]);
     return {
       hasMainAlt: type === "AlphabetKey",
       hasLabel: labelTypes.has(type),
-      hasSubLabel: type === "LayoutSwitchKey" || type === "LayerSwitchKey",
+      hasSubLabel: type === "LayoutSwitchKey",
       hasEditableSubLabel: false,
       hasDisplayText: displayTextTypes.has(type),
       hasSwipeLabel: swipeTypes.has(type),
@@ -2699,10 +2699,7 @@
     const type = key.type || "AlphabetKey";
     const typeSelect = el("layout-key-type");
     typeSelect.innerHTML = keyTypes.map((t) => `<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join("");
-    if (!keyTypes.includes(type)) {
-      typeSelect.insertAdjacentHTML("beforeend", `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`);
-    }
-    typeSelect.value = type;
+    typeSelect.value = keyTypes.includes(type) ? type : "AlphabetKey";
     el("layout-key-main").value = key.main || "";
     el("layout-key-alt").value = key.alt || "";
     el("layout-key-label").value = key.label || "";
@@ -2717,20 +2714,44 @@
   function updateKeyDialogFieldVisibility(type) {
     const c = keyTypeCapabilities(type);
     const inComposeEdit = !!state.composeNestedContext;
+    const canEditCompose = !inComposeEdit;
+    const showDisplay = c.hasDisplayText;
+    const showLabels = c.hasSwipeLabel || c.hasMacroLabels;
+    const showMacro = c.hasTapAction || c.hasSwipeAction || c.hasLongPressAction;
     document.querySelectorAll(".key-basic-main, .key-basic-alt").forEach((node) => { node.hidden = !c.hasMainAlt; });
     document.querySelectorAll(".key-basic-label").forEach((node) => { node.hidden = !c.hasLabel; });
     document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasEditableSubLabel; });
     document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit; });
+    const mainInput = el("layout-key-main");
+    const altInput = el("layout-key-alt");
+    const labelInput = el("layout-key-label");
+    const subLabelInput = el("layout-key-sub-label");
+    const weightInput = el("layout-key-weight");
+    const rowHeightInput = el("layout-key-row-height");
+    if (mainInput) mainInput.disabled = !c.hasMainAlt;
+    if (altInput) altInput.disabled = !c.hasMainAlt;
+    if (labelInput) labelInput.disabled = !c.hasLabel;
+    if (subLabelInput) subLabelInput.disabled = !c.hasEditableSubLabel;
+    if (weightInput) weightInput.disabled = inComposeEdit;
+    if (rowHeightInput) rowHeightInput.disabled = inComposeEdit;
     const displayBtn = el("layout-key-open-display-text");
     const labelsBtn = el("layout-key-open-labels");
     const macroBtn = el("layout-key-open-macro");
     const colorsBtn = el("layout-key-open-colors");
     const composeBtn = el("layout-key-open-compose");
-    if (displayBtn) displayBtn.disabled = !c.hasDisplayText;
-    if (labelsBtn) labelsBtn.disabled = !(c.hasSwipeLabel || c.hasMacroLabels);
-    if (macroBtn) macroBtn.disabled = !(c.hasTapAction || c.hasSwipeAction || c.hasLongPressAction);
-    if (colorsBtn) colorsBtn.disabled = inComposeEdit && !isComposeIndependentColorEnabled();
-    if (composeBtn) composeBtn.disabled = !!state.composeNestedContext;
+    if (displayBtn) displayBtn.hidden = !showDisplay;
+    if (labelsBtn) labelsBtn.hidden = !showLabels;
+    if (macroBtn) macroBtn.hidden = !showMacro;
+    if (colorsBtn) colorsBtn.hidden = inComposeEdit && !isComposeIndependentColorEnabled();
+    if (composeBtn) composeBtn.hidden = !canEditCompose;
+    const displaySummary = el("layout-key-display-text-summary");
+    const labelsSummary = el("layout-key-labels-summary");
+    const macroSummary = el("layout-key-macro-summary");
+    const composeSummary = el("layout-key-compose-summary");
+    if (displaySummary) displaySummary.hidden = !showDisplay;
+    if (labelsSummary) labelsSummary.hidden = !showLabels;
+    if (macroSummary) macroSummary.hidden = !showMacro;
+    if (composeSummary) composeSummary.hidden = inComposeEdit;
     if (!c.hasDisplayText && keyDialogState.draft) delete keyDialogState.draft.displayText;
     if (!c.hasSubLabel && keyDialogState.draft) delete keyDialogState.draft.subLabel;
     if (!c.hasSwipeLabel && keyDialogState.draft) delete keyDialogState.draft.swipeLabel;
@@ -2804,7 +2825,7 @@
     if (main.trim()) key.main = main; else delete key.main;
     if (alt.trim()) key.alt = alt; else delete key.alt;
     if (c.hasLabel) {
-      if (type === "LayoutSwitchKey" || type === "LayerSwitchKey") key.label = label.trim() ? label : "?123";
+      if (type === "LayoutSwitchKey") key.label = label.trim() ? label : "?123";
       else if (type === "SymbolKey") key.label = label.trim() ? label : ".";
       else if (label.trim()) key.label = label;
       else delete key.label;
