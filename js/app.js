@@ -12,6 +12,9 @@
   const LONG_IMAGE_PAGE_PADDING = 24;
   const LONG_IMAGE_TEXT_SIZE = 22;
   const LONG_IMAGE_TEXT_GAP = 12;
+  const LONG_IMAGE_PREVIEW_PADDING = 10;
+  const LONG_IMAGE_PREVIEW_ROW_GAP = 8;
+  const LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH = 720;
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   const HEIGHT_KEY = "keyboard_height_percent";
@@ -4629,21 +4632,65 @@
     ctx.fillText(value, x + width - 6, y + 4);
   }
 
-  function renderPreviewCanvas(targetWidth) {
+  function loadImageForCanvas(url) {
+    return new Promise((resolve, reject) => {
+      if (!url) {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("主题背景图加载失败"));
+      img.src = url;
+    });
+  }
+
+  function drawCoverImage(ctx, image, width, height) {
+    const iw = Number(image?.naturalWidth || image?.width || 0);
+    const ih = Number(image?.naturalHeight || image?.height || 0);
+    if (!iw || !ih) return;
+    const scale = Math.max(width / iw, height / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = (width - dw) / 2;
+    const dy = (height - dh) / 2;
+    ctx.drawImage(image, dx, dy, dw, dh);
+  }
+
+  async function renderPreviewCanvas(targetWidth) {
     const rows = getRows();
-    const previewPadding = 24;
-    const rowGap = 0;
-    const keyboardWidth = Math.max(1, targetWidth - previewPadding * 2);
+    const previewPadding = LONG_IMAGE_PREVIEW_PADDING;
+    const rowGap = LONG_IMAGE_PREVIEW_ROW_GAP;
+    const keyboardWidth = Math.min(
+      LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH,
+      Math.max(1, targetWidth - previewPadding * 2)
+    );
     const rowPercents = resolveRowHeightPercents(rows);
     const rowHeights = rowPercents.map(effectiveRowHeight);
-    const contentHeight = rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, rows.length - 1) * rowGap;
+    const contentHeight = rowHeights.reduce((sum, h) => sum + h, 0) + rows.length * rowGap;
     const height = Math.max(1, contentHeight + previewPadding * 2);
     const canvas = document.createElement("canvas");
     canvas.width = targetWidth;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = argbToCss(resolveThemeTokenColor("keyboardColor"));
-    ctx.fillRect(0, 0, targetWidth, height);
+    const keyboardColor = argbToCss(resolveThemeTokenColor("keyboardColor"));
+    const theme = currentThemeEntry();
+    if (theme?.backgroundImage) {
+      try {
+        const image = await loadImageForCanvas(theme.backgroundImage);
+        if (image) drawCoverImage(ctx, image, targetWidth, height);
+        ctx.globalCompositeOperation = "multiply";
+        ctx.fillStyle = keyboardColor;
+        ctx.fillRect(0, 0, targetWidth, height);
+        ctx.globalCompositeOperation = "source-over";
+      } catch (_) {
+        ctx.fillStyle = keyboardColor;
+        ctx.fillRect(0, 0, targetWidth, height);
+      }
+    } else {
+      ctx.fillStyle = keyboardColor;
+      ctx.fillRect(0, 0, targetWidth, height);
+    }
     ctx.strokeStyle = argbToCss(resolveThemeTokenColor("dividerColor"));
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, targetWidth - 1, height - 1);
@@ -4681,11 +4728,11 @@
     return canvas;
   }
 
-  function composeQrLongImage(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
+  async function composeQrLongImage(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
     const labels = buildChunkLabels(bundle, profile, transferType);
     const pageHeight = LONG_IMAGE_PAGE_PADDING + LONG_IMAGE_QR_SIZE + LONG_IMAGE_TEXT_GAP + LONG_IMAGE_TEXT_SIZE + LONG_IMAGE_PAGE_PADDING;
     const width = LONG_IMAGE_QR_SIZE + LONG_IMAGE_PAGE_PADDING * 2;
-    const previewCanvas = renderPreviewCanvas(width);
+    const previewCanvas = await renderPreviewCanvas(width);
     const previewSectionHeight = previewCanvas.height + LONG_IMAGE_PAGE_PADDING;
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -4718,7 +4765,7 @@
   }
 
   async function downloadQrLongImage(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
-    const canvas = composeQrLongImage(bundle, profile, transferType);
+    const canvas = await composeQrLongImage(bundle, profile, transferType);
     const blob = await canvasToPngBlob(canvas);
     const prefix = transferType === TRANSFER_TYPE_THEME
       ? "text-keyboard-theme-qr"
