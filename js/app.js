@@ -1,10 +1,11 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T11:36+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T14:17+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
-  const MAX_CHUNK_BYTES = 1500;
+  const MAX_CHUNK_BYTES = 1024;
+  const MAX_CHUNK_BYTES_OF_APP = 1500;
   const TRANSFER_TYPE_LAYOUT = "L";
   const TRANSFER_TYPE_THEME = "T";
   const TRANSFER_TYPE_POPUP = "P";
@@ -5307,15 +5308,28 @@
 
   async function encodeJsonToChunks(rawJson, profile, transferType = TRANSFER_TYPE_LAYOUT) {
     await ensureWasm();
-    const raw = new TextEncoder().encode(rawJson);
-    const compressed = window.lzma_wasm.compress(raw, { format: "xz", level: 6 });
+    // 去除非必要空白字符再压缩
+    let minifiedJson = rawJson;
+    try {
+      minifiedJson = JSON.stringify(JSON.parse(rawJson));
+    } catch (e) {}
+    const rawOld = new TextEncoder().encode(rawJson);
+    const raw = new TextEncoder().encode(minifiedJson);
+    const compressed = window.lzma_wasm.compress(raw, { format: "xz", level: 9 });
     const crc = crc32(compressed);
     const transferId = buildTransferId(transferType, profile);
-    const total = Math.ceil(compressed.length / MAX_CHUNK_BYTES) || 1;
+    // 限制每片最大不超过 MAX_CHUNK_BYTES，且尽量均匀分配
+    const maxBytes = MAX_CHUNK_BYTES;
+    let total = Math.ceil(compressed.length / maxBytes) || 1;
+    // 使每片尽量均匀，且每片不超过 maxBytes
+    let chunkSize = Math.ceil(compressed.length / total);
+    if (chunkSize > maxBytes) chunkSize = maxBytes;
+    console.log('rawOld.length = %d, raw.length = %d, compressed.length = %d', rawOld.length, raw.length, compressed.length);
+    console.log('chunkSize = %d, total = %d', chunkSize, total);
     const chunks = [];
     for (let i = 0; i < total; i++) {
-      const start = i * MAX_CHUNK_BYTES;
-      const end = Math.min(start + MAX_CHUNK_BYTES, compressed.length);
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, compressed.length);
       chunks.push(`${MAGIC}|${transferId}|${i + 1}/${total}|${crc}|${bytesToBase64Url(compressed.slice(start, end))}`);
     }
     return { transferId, total, chunks };
@@ -5699,7 +5713,7 @@
     } catch (_) {
       return null;
     }
-    if (payloadBytesLength <= 0 || payloadBytesLength > MAX_CHUNK_BYTES) return null;
+    if (payloadBytesLength <= 0 || payloadBytesLength > MAX_CHUNK_BYTES_OF_APP) return null;
     return { transferId, index, total, crc, payload, text };
   }
 
@@ -6080,6 +6094,12 @@
     const idx = el("layout-qr-index");
     if (idx) idx.textContent = `${has ? state.qr.index + 1 : 0} / ${state.qr.chunks.length}`;
     if (!canvas) return;
+    // 自适应尺寸：最大为窗口宽高的80%，最小320，最大720
+    const size = Math.max(320, Math.min(720, Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.8)));
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!has) return;
@@ -6095,6 +6115,12 @@
     if (idx) idx.textContent = `${has ? state.themeQr.index + 1 : 0} / ${state.themeQr.chunks.length}`;
     const canvas = el("theme-qr-canvas");
     if (!canvas) return;
+    // 自适应尺寸：最大为窗口宽高的80%，最小320，最大720
+    const size = Math.max(320, Math.min(720, Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.8)));
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!has) return;
@@ -6110,6 +6136,12 @@
     if (idx) idx.textContent = `${has ? state.popupQr.index + 1 : 0} / ${state.popupQr.chunks.length}`;
     const canvas = el("popup-qr-canvas");
     if (!canvas) return;
+    // 自适应尺寸：最大为窗口宽高的80%，最小320，最大720
+    const size = Math.max(320, Math.min(720, Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.8)));
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!has) return;
