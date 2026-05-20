@@ -1065,6 +1065,17 @@ input[type="checkbox"] {
   width: min(780px, calc(100vw - 32px));
 }
 
+.json-dialog {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+.json-dialog .form-row,
+.json-dialog .cm-editor,
+.json-dialog .json-editor {
+  width: 100%;
+  max-width: 100%;
+}
+
 .display-map-row {
   display: grid;
   grid-template-columns: 1fr 1fr auto;

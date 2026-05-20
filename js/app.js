@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T08:51+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T09:00+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -4178,6 +4178,7 @@
     setLayoutKeyJsonText(prettyJson(keyDialogState.draft || {}));
     el("layout-key-json-dialog").showModal();
     void initLayoutKeyJsonEditor();
+    requestAnimationFrame(() => state.layoutKeyJsonEditor?.requestMeasure?.());
   }
 
   function saveKeyJsonDialog() {
