@@ -106,14 +106,14 @@
         <details class="card theme-main-card" open>
           <summary>主题管理与编辑</summary>
           <div class="toolbar details-toolbar">
+            <button id="theme-export-json" type="button">导出JSON</button>
+            <button id="theme-share-current" type="button">分享主题</button>
+            <button id="theme-import-shared" type="button">导入主题</button>
             <button id="theme-create-from-current" type="button">复制主题</button>
             <button id="theme-rename-custom" type="button">主题改名</button>
             <button id="theme-delete-custom" type="button">删除主题</button>
             <button id="theme-import-background" type="button">修改背景</button>
             <button id="theme-clear-background" type="button">清除背景</button>
-            <button id="theme-export-json" type="button">导出JSON</button>
-            <button id="theme-share-current" type="button">分享主题</button>
-            <button id="theme-import-shared" type="button">导入主题</button>
             <input id="theme-import-background-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
             <input id="theme-import-file" type="file" accept="application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
           </div>
@@ -142,7 +142,7 @@
                   <label>按键纵向边距 <input type="number" id="theme-app-key-vgap" min="0" max="24" step="1" value="3"> dp</label>
                 </div>
                 <div class="form-row">
-                  <label>按键圆角半径 <input type="number" id="theme-app-key-radius" min="0" max="32" step="1" value="4"> px</label>
+                  <label>按键圆角半径 <input type="number" id="theme-app-key-radius" min="0" max="32" step="1" value="4"> dp</label>
                 </div>
                 <div class="form-row form-inline">
                   <label for="theme-app-punct-pos">标点位置</label>
@@ -496,6 +496,6 @@
   <script src="./js/qr-import.js?v=20260519193000"></script>
   <script src="./js/jscolor/jscolor.js?v=20260519193000"></script>
   <script src="./js/key-editor-bindings.js?v=20260519193000"></script>
-  <script src="./js/app.js?v=20260520090500"></script>
+  <script src="./js/app.js?v=20260520091300"></script>
 </body>
 </html>

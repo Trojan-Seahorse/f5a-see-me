@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T09:05+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T09:13+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -612,6 +612,13 @@
 
   function isCurrentThemeEditable() {
     return !!currentThemeEntry() && !currentThemeEntry().builtin;
+  }
+
+  function updateThemeManageButtonsVisibility(editable) {
+    ["theme-rename-custom", "theme-delete-custom", "theme-import-background", "theme-clear-background"].forEach((id) => {
+      const btn = el(id);
+      if (btn) btn.hidden = !editable;
+    });
   }
 
   function nextCustomThemeName(baseName, excludeId = "") {
@@ -1301,13 +1308,10 @@
     const rows = el("theme-color-rows");
     if (!rows) return;
     rows.hidden = !editable;
+    updateThemeManageButtonsVisibility(editable);
     if (!editable) {
       rows.innerHTML = "";
       setStatus("theme-editor-status", "", "");
-      el("theme-delete-custom").disabled = true;
-      el("theme-rename-custom").disabled = true;
-      el("theme-import-background").disabled = true;
-      el("theme-clear-background").disabled = true;
       syncThemeJsonHeight();
       return;
     }
@@ -1348,10 +1352,6 @@
       installThemeColorPicker(input, token, syncInputToState);
       input.addEventListener("change", syncInputToState);
     });
-    el("theme-delete-custom").disabled = false;
-    el("theme-rename-custom").disabled = false;
-    el("theme-import-background").disabled = false;
-    el("theme-clear-background").disabled = false;
     syncThemeJsonHeight();
   }
 
