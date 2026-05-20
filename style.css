@@ -1102,6 +1102,18 @@ input[type="checkbox"] {
   width: 100%;
 }
 
+@media (max-width: 640px) {
+  .color-edit-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .color-edit-row > label {
+    margin-bottom: 2px;
+  }
+}
+
 .layout-gradient-anchor-list {
   display: grid;
   gap: 8px;
