@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T00:50+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T08:51+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -3983,6 +3983,46 @@
     el("layout-gradient-dialog").close();
   }
 
+  function clearKeyColorOverrides(key) {
+    if (!key || typeof key !== "object" || Array.isArray(key)) return 0;
+    let count = 0;
+    keyColorFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(key, field.customKey)) {
+        delete key[field.customKey];
+        count += 1;
+      }
+      if (Object.prototype.hasOwnProperty.call(key, field.monetKey)) {
+        delete key[field.monetKey];
+        count += 1;
+      }
+    });
+    if (key.composeOverride && typeof key.composeOverride === "object" && !Array.isArray(key.composeOverride)) {
+      count += clearKeyColorOverrides(key.composeOverride);
+    }
+    return count;
+  }
+
+  function clearLayoutKeyColors() {
+    let cleared = 0;
+    baseNames(state.layout).forEach((base) => {
+      const value = state.layout[base];
+      if (isRows(value)) {
+        value.forEach((row) => row.forEach((key) => { cleared += clearKeyColorOverrides(key); }));
+        return;
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      Object.keys(value)
+        .filter((key) => key !== META_KEY)
+        .forEach((sub) => {
+          const rows = unwrapRows(value[sub]);
+          if (isRows(rows)) rows.forEach((row) => row.forEach((key) => { cleared += clearKeyColorOverrides(key); }));
+        });
+    });
+    syncLayoutUiFromState();
+    setStatus("layout-json-status", cleared ? `已清除 ${cleared} 个按键颜色覆盖` : "没有可清除的按键颜色覆盖", cleared ? "ok" : "");
+    el("layout-clear-colors-dialog").close();
+  }
+
   function interpolateColorByDistance(x, y, anchors) {
     let weightSum = 0;
     let aSum = 0;
@@ -4803,6 +4843,9 @@
     el("layout-rename-layout").addEventListener("click", renameLayout);
     el("layout-delete-layout").addEventListener("click", handlePrimaryDeleteLayout);
     el("layout-open-gradient").addEventListener("click", openLayoutGradientDialog);
+    el("layout-clear-colors").addEventListener("click", () => el("layout-clear-colors-dialog").showModal());
+    el("layout-clear-colors-cancel").addEventListener("click", () => el("layout-clear-colors-dialog").close());
+    el("layout-clear-colors-confirm").addEventListener("click", clearLayoutKeyColors);
     el("layout-gradient-anchor-add").addEventListener("click", addLayoutGradientAnchor);
     el("layout-gradient-cancel").addEventListener("click", () => el("layout-gradient-dialog").close());
     el("layout-gradient-apply").addEventListener("click", () => {

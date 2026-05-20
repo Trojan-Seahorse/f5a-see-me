@@ -58,11 +58,12 @@
                 <button id="layout-rename-layout">重命名布局</button>
                 <button id="layout-reset">重置示例</button>
                 <button id="layout-download-json">导出 JSON</button>
-                <button id="layout-open-gradient" type="button">按键渐变着色</button>
                 <label class="file-button">
                   导入 JSON
                   <input id="layout-import-file" type="file" accept="application/json,.json">
                 </label>
+                <button id="layout-open-gradient" type="button">按键渐变着色</button>
+                <button id="layout-clear-colors" type="button">清除按键颜色</button>
               </div>
               <div class="form-grid-2">
                 <div class="form-row form-inline">
@@ -198,13 +199,8 @@
 
   <footer class="footnote">
     <p><center>All rights reserved © <a href="https://github.com/fxliang/f5a-see-me" target="_blank" rel="noopener noreferrer">fxliang/f5a-see-me</a></center></p>
-    <p class="visit-stats" aria-live="polite">
-      <span id="busuanzi_container_site_pv">本站总访问量 <span id="busuanzi_value_site_pv">0</span> 次</span>
-      <span class="visit-sep">|</span>
-      <span id="busuanzi_container_site_uv">本站访客数 <span id="busuanzi_value_site_uv">0</span> 人</span>
-      <span class="visit-sep">|</span>
-      <span id="busuanzi_container_page_pv">本页访问量 <span id="busuanzi_value_page_pv">0</span> 次</span>
-    </p>
+  <script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+  <center><span id="busuanzi_container_site_pv">本站总访问量<span id="busuanzi_value_site_pv"></span>次</span></center>
   </footer>
 
   <dialog id="layout-add-dialog" class="editor-dialog sub-dialog">
@@ -406,6 +402,17 @@
     </form>
   </dialog>
 
+  <dialog id="layout-clear-colors-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>清除按键颜色</h3></div>
+      <div class="status">将清除当前布局中全部按键的颜色覆盖，包括合成中按键的独立颜色。此操作不会删除按键、标签或事件。</div>
+      <div class="toolbar">
+        <button type="button" id="layout-clear-colors-cancel">取消</button>
+        <button type="button" id="layout-clear-colors-confirm">清除</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="layout-key-macro-event-dialog" class="editor-dialog sub-dialog">
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3 id="layout-key-macro-event-title">编辑事件步骤</h3></div>
@@ -485,10 +492,10 @@
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lzma-wasm@1.0.7/dist/iife/index.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script defer src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
   <script src="./js/qr-import.js?v=20260519193000"></script>
   <script src="./js/jscolor/jscolor.js?v=20260519193000"></script>
   <script src="./js/key-editor-bindings.js?v=20260519193000"></script>
-  <script src="./js/app.js?v=20260520005000"></script>
+  <script src="./js/app.js?v=20260520085100"></script>
 </body>
 </html>
