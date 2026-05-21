@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T14:17+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-21T00:00+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -305,6 +305,7 @@
     selectedSubmode: DEFAULT_SUBMODE,
     suppressLayoutJsonInput: false,
     wasmReady: false,
+    wasmInitPromise: null,
     qr: { chunks: [], index: 0, transferId: "", layoutSignature: "" },
     themeQr: { chunks: [], index: 0, transferId: "", themeSignature: "" },
     qrImportRunning: false,
@@ -5302,8 +5303,42 @@
 
   async function ensureWasm() {
     if (state.wasmReady) return;
-    await window.lzma_wasm.initWasm();
-    state.wasmReady = true;
+    if (!window.lzma_wasm || typeof window.lzma_wasm.initWasm !== "function") {
+      throw new Error("LZMA-Wasm 未加载");
+    }
+    if (!state.wasmInitPromise) {
+      state.wasmInitPromise = window.lzma_wasm.initWasm()
+        .then(() => {
+          state.wasmReady = true;
+        })
+        .catch((err) => {
+          state.wasmReady = false;
+          state.wasmInitPromise = null;
+          throw err;
+        });
+    }
+    await state.wasmInitPromise;
+  }
+
+  function compressQrPayload(raw) {
+    if (!window.lzma_wasm || typeof window.lzma_wasm.compress !== "function") {
+      throw new Error("LZMA-Wasm 压缩器未加载");
+    }
+    const levels = [9, 6, 3, 1];
+    let lastError = null;
+    for (const level of levels) {
+      try {
+        const compressed = window.lzma_wasm.compress(raw, { format: "xz", level });
+        if (!compressed || typeof compressed.length !== "number") {
+          throw new Error("LZMA-Wasm 返回了无效压缩结果");
+        }
+        return compressed instanceof Uint8Array ? compressed : new Uint8Array(compressed);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    const detail = lastError && lastError.message ? `：${lastError.message}` : "";
+    throw new Error(`二维码数据压缩失败${detail}`);
   }
 
   async function encodeJsonToChunks(rawJson, profile, transferType = TRANSFER_TYPE_LAYOUT) {
@@ -5312,9 +5347,9 @@
     let minifiedJson = rawJson;
     try {
       minifiedJson = JSON.stringify(JSON.parse(rawJson));
-    } catch (e) {}
+    } catch {}
     const raw = new TextEncoder().encode(minifiedJson);
-    const compressed = window.lzma_wasm.compress(raw, { format: "xz", level: 9 });
+    const compressed = compressQrPayload(raw);
     const crc = crc32(compressed);
     const transferId = buildTransferId(transferType, profile);
     // 限制每片最大不超过 MAX_CHUNK_BYTES，且尽量均匀分配
