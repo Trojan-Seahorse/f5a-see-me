@@ -2199,11 +2199,15 @@
     const naturalHeight = shell?.offsetHeight || 220;
     if (shell) shell.style.zoom = savedZoom || "";
 
-    // More aggressive on desktop (no touch) where high-DPI scaling is common
+    // Scale preview based on viewport height:
+    // - Phone (touch): always generous (ratio 0.22, floor 200)
+    // - Tall desktop (>900px): mostly natural size (ratio 0.22, floor 200)
+    // - Short desktop (≤900px, high-DPI): aggressive (ratio 0.16, floor 140)
     const vh = window.innerHeight;
     const isMobile = navigator.maxTouchPoints > 0;
-    const ratio = isMobile ? 0.22 : 0.14;
-    const targetMax = Math.max(vh * ratio, isMobile ? 200 : 130);
+    const isShortDesktop = !isMobile && vh <= 900;
+    const ratio = isShortDesktop ? 0.16 : 0.22;
+    const targetMax = Math.max(vh * ratio, isShortDesktop ? 140 : 200);
     let scale = 1;
     if (naturalHeight > targetMax && naturalHeight > 0) {
       scale = Math.max(0.45, targetMax / naturalHeight);
