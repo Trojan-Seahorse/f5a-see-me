@@ -527,6 +527,11 @@ input[type="checkbox"] {
   margin-bottom: 8px;
   color: var(--sub);
 }
+.surface-active-mark {
+  color: var(--primary);
+  font-size: 0.85em;
+  vertical-align: middle;
+}
 
 .theme-color-inputs {
   display: block;

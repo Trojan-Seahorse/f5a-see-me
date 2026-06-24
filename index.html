@@ -77,10 +77,17 @@
               <summary>二维码分享和导入</summary>
               <div>
                 <div class="form-row form-inline">
+                  <label for="layout-ime-profile">IME 布局 profile</label>
+                  <select id="layout-ime-profile"></select>
+                  <button id="layout-ime-profile-refresh" type="button">刷新列表</button>
+                </div>
+                <div class="form-row form-inline">
                   <label>分享布局profile名（可选）</label>
                   <input id="layout-profile" type="text" placeholder="default">
                 </div>
                 <div class="toolbar">
+                  <button id="layout-ime-load">从 IME 读取</button>
+                  <button id="layout-ime-save">保存到 IME</button>
                   <button id="layout-share-current">分享布局</button>
                   <button id="layout-import-qr-image">导入二维码</button>
                   <input id="layout-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -106,6 +113,8 @@
         <details class="card theme-main-card" open>
           <summary>主题管理与编辑</summary>
           <div class="toolbar details-toolbar">
+            <button id="theme-ime-load" type="button">从 IME 读取</button>
+            <button id="theme-ime-save" type="button">保存到 IME</button>
             <button id="theme-export-json" type="button">导出JSON</button>
             <button id="theme-share-current" type="button">分享主题</button>
             <button id="theme-import-shared" type="button">导入主题</button>
@@ -173,6 +182,8 @@
         <details class="card popup-main-card" open>
           <summary>弹出字符编辑</summary>
           <div class="toolbar details-toolbar">
+            <button id="popup-ime-load" type="button">从 IME 读取</button>
+            <button id="popup-ime-save" type="button">保存到 IME</button>
             <button id="popup-add-mapping" type="button">新增映射</button>
             <button id="popup-export-json" type="button">导出 JSON</button>
             <button id="popup-import-json" type="button">导入 JSON</button>

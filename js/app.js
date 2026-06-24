@@ -9,6 +9,7 @@
   const TRANSFER_TYPE_LAYOUT = "L";
   const TRANSFER_TYPE_THEME = "T";
   const TRANSFER_TYPE_POPUP = "P";
+  const IME_API_BASE = resolveImeApiBase();
   const LONG_IMAGE_QR_SIZE = 768;
   const LONG_IMAGE_PAGE_PADDING = 24;
   const LONG_IMAGE_TEXT_SIZE = 22;
@@ -19,7 +20,18 @@
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   const HEIGHT_KEY = "keyboard_height_percent";
-  const PREVIEW_KEY_BORDER_ENABLED = true;
+  const PREVIEW_KEY_BORDER_ENABLED = false;
+
+  function resolveImeApiBase() {
+    const globalBase = typeof window.__F5A_IME_API_BASE__ === "string" ? window.__F5A_IME_API_BASE__.trim() : "";
+    if (globalBase) return globalBase.replace(/\/+$/, "");
+    const queryBase = new URLSearchParams(window.location.search || "").get("imeApi");
+    if (queryBase && /^https?:\/\//i.test(queryBase)) return queryBase.replace(/\/+$/, "");
+    if (window.location.protocol === "http:" || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      return window.location.origin.replace(/\/+$/, "");
+    }
+    return "";
+  }
 
   const defaultLayout = {
     default: [
@@ -87,7 +99,7 @@
     "clipboardEntryColor", "genericActiveBackgroundColor", "genericActiveForegroundColor"
   ];
   const themeColorLabels = {
-    backgroundColor: "背景颜色",
+    backgroundColor: "页面底色",
     barColor: "工具栏颜色",
     keyboardColor: "键盘底色",
     keyBackgroundColor: "普通按键背景",
@@ -600,11 +612,40 @@
     };
   }
 
+  function resolvePreviewSurfaceColor() {
+    const borderEnabled = state.themeAppSync?.borderEnabled ?? PREVIEW_KEY_BORDER_ENABLED;
+    const token = borderEnabled ? "backgroundColor" : "keyboardColor";
+    return argbToCss(resolveThemeTokenColor(token));
+  }
+
+  function syncSurfaceColorIndicator() {
+    const rows = el("theme-color-rows");
+    if (!rows || rows.hidden) return;
+    const borderEnabled = state.themeAppSync?.borderEnabled ?? PREVIEW_KEY_BORDER_ENABLED;
+    const activeToken = borderEnabled ? "backgroundColor" : "keyboardColor";
+    rows.querySelectorAll(".theme-color-row").forEach((row) => {
+      const token = row.dataset.token;
+      if (token !== "backgroundColor" && token !== "keyboardColor") return;
+      let mark = row.querySelector(".surface-active-mark");
+      if (token === activeToken) {
+        if (!mark) {
+          mark = document.createElement("span");
+          mark.className = "surface-active-mark";
+          mark.title = "当前作为预览区背景生效中";
+          mark.textContent = " ●";
+          row.querySelector("label")?.appendChild(mark);
+        }
+      } else {
+        mark?.remove();
+      }
+    });
+  }
+
   function applyPreviewThemeSurface() {
     const root = el("layout-preview");
     if (!root) return;
     const theme = currentThemeEntry();
-    root.style.backgroundColor = argbToCss(resolveThemeTokenColor("keyboardColor"));
+    root.style.backgroundColor = resolvePreviewSurfaceColor();
     root.style.backgroundImage = theme?.backgroundImage ? `url("${theme.backgroundImage}")` : "none";
     root.style.backgroundSize = theme?.backgroundImage ? "cover" : "";
     root.style.backgroundPosition = theme?.backgroundImage ? "center" : "";
@@ -856,7 +897,7 @@
       return `<div class="theme-preview-extra-item is-foreground-tone" style="background:${escapeAttr(bg)};color:${escapeAttr(fg)}"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>`;
     };
     const items = [
-      buildBackgroundItem("背景", "Background", resolveThemeTokenColor("backgroundColor")),
+      buildBackgroundItem("页面底色", "Background", resolveThemeTokenColor("backgroundColor")),
       buildBackgroundItem("工具栏", "Toolbar", resolveThemeTokenColor("barColor")),
       buildForegroundItem("候选文字", "Candidate", resolveThemeTokenColor("candidateTextColor")),
       buildForegroundItem("候选标签", "Label", resolveThemeTokenColor("candidateLabelColor")),
@@ -1387,12 +1428,20 @@
       syncThemeJsonHeight();
       return;
     }
+    const borderEnabled = state.themeAppSync?.borderEnabled ?? PREVIEW_KEY_BORDER_ENABLED;
+    const activeSurfaceToken = borderEnabled ? "backgroundColor" : "keyboardColor";
     rows.innerHTML = themeColorTokens.map((token) => {
       const value = resolveThemeTokenColor(token);
       const argb = toArgbHex(value);
+      const isSurfaceToken = token === "backgroundColor" || token === "keyboardColor";
+      const isActive = token === activeSurfaceToken;
+      const surfaceTooltip = isSurfaceToken
+        ? `title="预览区背景色取决于「启用按键边框」开关：开启时使用页面底色，关闭时使用键盘底色"`
+        : "";
+      const activeMark = isActive ? ' <span class="surface-active-mark" title="当前作为预览区背景生效中">●</span>' : "";
       return `
         <div class="theme-color-row" data-token="${escapeAttr(token)}">
-          <label>${escapeHtml(themeColorLabels[token] || token)}</label>
+          <label ${surfaceTooltip}>${escapeHtml(themeColorLabels[token] || token)}${activeMark}</label>
           <div class="theme-color-inputs">
             <input type="text" class="theme-color-input" value="${escapeAttr(argb)}" placeholder="#AARRGGBB" aria-label="${escapeAttr(`${themeColorLabels[token] || token} ARGB`)}" ${editable ? "" : "readonly"}>
           </div>
@@ -1413,16 +1462,25 @@
         syncLayoutUiFromState();
         return true;
       };
-      const syncInputToState = () => {
+      const syncInputToState = ({ strict = false } = {}) => {
         if (!applyColor(input.value.trim())) {
+          if (!strict) return;
           input.value = toArgbHex(resolveThemeTokenColor(token));
           setStatus("theme-editor-status", `${themeColorLabels[token] || token} 颜色格式无效`, "err");
         } else {
+          syncThemePickerFromArgbInput(input);
           setStatus("theme-editor-status", "主题颜色已更新并同步到预览", "ok");
+          input.jscolor?.hide();
         }
       };
       installThemeColorPicker(input, token, syncInputToState);
-      input.addEventListener("change", syncInputToState);
+      input.addEventListener("change", () => syncInputToState({ strict: true }));
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        syncInputToState({ strict: true });
+        input.blur();
+      });
     });
     syncThemeJsonHeight();
   }
@@ -5629,7 +5687,7 @@
     canvas.width = targetWidth;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    const keyboardColor = argbToCss(resolveThemeTokenColor("keyboardColor"));
+    const keyboardColor = resolvePreviewSurfaceColor();
     const theme = currentThemeEntry();
     if (theme?.backgroundImage) {
       try {
@@ -6472,10 +6530,300 @@
       el(id).addEventListener('change', () => {
         syncThemeAppSyncStateFromUi();
         renderLayoutPreview();
-        // 主题预览长图等也用到
+        syncSurfaceColorIndicator();
       });
     });
     syncThemeAppSyncUiFromState();
+  }
+
+  async function imeApiRequest(path, options = {}) {
+    if (!IME_API_BASE) throw new Error("当前页面未配置 IME API 地址");
+    const url = `${IME_API_BASE}${path}`;
+    const resp = await fetch(url, {
+      cache: "no-store",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      }
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`${resp.status} ${resp.statusText}${text ? `: ${text}` : ""}`);
+    }
+    const contentType = String(resp.headers.get("content-type") || "").toLowerCase();
+    if (contentType.includes("application/json")) return await resp.json();
+    return {};
+  }
+
+  function getSelectedImeLayoutProfile() {
+    const selector = el("layout-ime-profile");
+    if (selector && typeof selector.value === "string" && selector.value.trim()) return selector.value.trim();
+    const fallback = el("layout-profile");
+    return typeof fallback?.value === "string" ? fallback.value.trim() : "";
+  }
+
+  function setSelectedImeLayoutProfile(profile) {
+    const value = String(profile || "").trim();
+    const selector = el("layout-ime-profile");
+    if (selector) {
+      const exists = Array.from(selector.options || []).some((opt) => opt.value === value);
+      if (!exists && value) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        selector.appendChild(option);
+      }
+      selector.value = value || selector.value;
+    }
+    const shareInput = el("layout-profile");
+    if (shareInput) shareInput.value = value;
+  }
+
+  async function refreshImeLayoutProfiles(preferredProfile = "") {
+    const payload = await imeApiRequest("/api/v1/layout/profiles");
+    const profiles = Array.isArray(payload.profiles) ? payload.profiles.map((p) => String(p || "").trim()).filter(Boolean) : [];
+    const current = String(preferredProfile || payload.currentProfile || "").trim();
+    const selector = el("layout-ime-profile");
+    if (!selector) return current;
+    selector.innerHTML = "";
+    profiles.forEach((profile) => {
+      const option = document.createElement("option");
+      option.value = profile;
+      option.textContent = profile;
+      selector.appendChild(option);
+    });
+    if (current) {
+      setSelectedImeLayoutProfile(current);
+    } else if (profiles.length > 0) {
+      setSelectedImeLayoutProfile(profiles[0]);
+    }
+    return getSelectedImeLayoutProfile();
+  }
+
+  async function loadLayoutFromIme(profileOverride = "") {
+    const profile = String(profileOverride || getSelectedImeLayoutProfile() || "").trim();
+    const suffix = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+    const payload = await imeApiRequest(`/api/v1/layout${suffix}`);
+    const raw = typeof payload.json === "string" ? payload.json : "{}";
+    state.layout = normalizeLayoutObject(JSON.parse(raw));
+    ensureSelection();
+    setSelectedImeLayoutProfile(payload.profile || profile || "");
+    syncLayoutUiFromState();
+    setStatus("layout-json-status", "已从 IME 读取布局", "ok");
+  }
+
+  async function saveLayoutToIme() {
+    const payload = currentLayoutQrPayload();
+    const profile = getSelectedImeLayoutProfile() || payload.profile || "";
+    await imeApiRequest("/api/v1/layout", {
+      method: "PUT",
+      body: JSON.stringify({ profile, json: payload.json })
+    });
+    setStatus("layout-json-status", `布局已保存到 IME（${profile || "default"}）`, "ok");
+  }
+
+  async function loadThemePrefsFromIme() {
+    const payload = await imeApiRequest("/api/v1/theme/prefs");
+    if (payload && typeof payload === "object") {
+      state.themeAppSync.borderEnabled = typeof payload.borderEnabled === "boolean" ? payload.borderEnabled : PREVIEW_KEY_BORDER_ENABLED;
+      state.themeAppSync.borderOutline = typeof payload.borderOutline === "boolean" ? payload.borderOutline : false;
+      state.themeAppSync.gboardStyle = typeof payload.gboardStyle === "boolean" ? payload.gboardStyle : false;
+      state.themeAppSync.keyHGap = typeof payload.keyHGap === "number" ? payload.keyHGap : 3;
+      state.themeAppSync.keyVGap = typeof payload.keyVGap === "number" ? payload.keyVGap : 3;
+      state.themeAppSync.keyRadius = typeof payload.keyRadius === "number" ? payload.keyRadius : 4;
+      state.themeAppSync.punctPos = typeof payload.punctPos === "string" ? payload.punctPos : "bottom";
+      syncThemeAppSyncUiFromState();
+      syncSurfaceColorIndicator();
+      renderLayoutPreview();
+    }
+  }
+
+  async function saveThemePrefsToIme() {
+    await imeApiRequest("/api/v1/theme/prefs", {
+      method: "PUT",
+      body: JSON.stringify({
+        borderEnabled: !!state.themeAppSync.borderEnabled,
+        borderOutline: !!state.themeAppSync.borderOutline,
+        gboardStyle: !!state.themeAppSync.gboardStyle,
+        keyHGap: Number(state.themeAppSync.keyHGap) || 0,
+        keyVGap: Number(state.themeAppSync.keyVGap) || 0,
+        keyRadius: Number(state.themeAppSync.keyRadius) || 0,
+        punctPos: state.themeAppSync.punctPos || "bottom"
+      })
+    });
+  }
+  async function loadThemeFromIme() {
+    const payload = await imeApiRequest("/api/v1/theme");
+    const themeList = Array.isArray(payload.themes) && payload.themes.length
+      ? payload.themes
+      : [payload.theme || payload];
+    const builtinCatalog = createBuiltinThemeCatalog();
+    const dedup = new Map();
+    themeList.forEach((item) => {
+      const normalized = normalizeImportedThemePayload(item);
+      if (!normalized?.name) return;
+      if (dedup.has(normalized.name)) return;
+      dedup.set(normalized.name, normalized);
+    });
+    const customCatalog = Array.from(dedup.values()).map((themeData) => ({
+      id: `custom-${Math.random().toString(36).slice(2, 10)}`,
+      name: themeData.name,
+      builtin: false,
+      isDark: !!themeData.isDark,
+      colors: normalizeThemeColors(themeData.colors),
+      backgroundImage: typeof themeData.backgroundImage === "string" ? themeData.backgroundImage : "",
+      backgroundImageObject: themeData.backgroundImageObject ? deepClone(themeData.backgroundImageObject) : null
+    }));
+    state.themeCatalog = [...customCatalog, ...builtinCatalog];
+    const activeName = String(payload.activeThemeName || "").trim();
+    if (activeName) {
+      const match = state.themeCatalog.find((item) => item.name === activeName);
+      if (match) state.selectedThemeId = match.id;
+    }
+    if (!state.themeCatalog.find((item) => item.id === state.selectedThemeId)) {
+      state.selectedThemeId = state.themeCatalog[0]?.id || "";
+    }
+    renderThemeList();
+    renderThemeEditor();
+    syncThemeJsonFromState();
+    syncLayoutUiFromState();
+    setStatus("theme-editor-status", `已从 IME 读取 ${customCatalog.length} 个自定义主题`, "ok");
+  }
+
+  async function saveThemeToIme() {
+    const current = currentThemeEntry();
+    if (!current || current.builtin) {
+      throw new Error("内置主题不可直接保存到 IME，请先复制为自定义主题");
+    }
+    const payload = {
+      name: current.name,
+      isDark: !!current.isDark,
+      ...(current.backgroundImageObject ? { backgroundImage: deepClone(current.backgroundImageObject) } : { backgroundImage: null }),
+      ...deepClone(current.colors)
+    };
+    await imeApiRequest("/api/v1/theme", {
+      method: "PUT",
+      body: JSON.stringify({ theme: payload })
+    });
+    setStatus("theme-editor-status", `主题已保存到 IME：${payload.name || ""}`, "ok");
+    setStatus("theme-qr-meta", `主题已保存到 IME：${payload.name || ""}`, "ok");
+  }
+
+  async function loadPopupFromIme() {
+    const payload = await imeApiRequest("/api/v1/popup");
+    const raw = typeof payload.json === "string" ? payload.json : "{}";
+    state.popupEntries = normalizePopupEntries(JSON.parse(raw));
+    renderPopupEditor();
+    syncPopupJsonFromState();
+    syncLayoutUiFromState();
+    setStatus("popup-editor-status", `已从 IME 读取 ${Object.keys(state.popupEntries).length} 条映射`, "ok");
+  }
+
+  async function savePopupToIme() {
+    const jsonText = `${prettyJson(state.popupEntries)}\n`;
+    await imeApiRequest("/api/v1/popup", {
+      method: "PUT",
+      body: JSON.stringify({ json: jsonText })
+    });
+    setStatus("popup-editor-status", "弹出字符映射已保存到 IME", "ok");
+  }
+
+  function setupImeBridgeActions() {
+    const hasApi = !!IME_API_BASE;
+    [
+      "layout-ime-load", "layout-ime-save",
+      "layout-ime-profile", "layout-ime-profile-refresh",
+      "theme-ime-load", "theme-ime-save",
+      "popup-ime-load", "popup-ime-save"
+    ].forEach((id) => {
+      const node = el(id);
+      if (node) node.disabled = !hasApi;
+    });
+    if (!hasApi) return;
+    el("layout-ime-load")?.addEventListener("click", async () => {
+      try {
+        await loadLayoutFromIme();
+      } catch (e) {
+        setStatus("layout-json-status", `读取失败：${e.message}`, "err");
+      }
+    });
+    el("layout-ime-profile-refresh")?.addEventListener("click", async () => {
+      try {
+        await refreshImeLayoutProfiles(getSelectedImeLayoutProfile());
+        setStatus("layout-json-status", "IME profile 列表已刷新", "ok");
+      } catch (e) {
+        setStatus("layout-json-status", `刷新 profile 列表失败：${e.message}`, "err");
+      }
+    });
+    el("layout-ime-profile")?.addEventListener("change", async () => {
+      const selected = getSelectedImeLayoutProfile();
+      setSelectedImeLayoutProfile(selected);
+      try {
+        await loadLayoutFromIme(selected);
+      } catch (e) {
+        setStatus("layout-json-status", `切换 profile 失败：${e.message}`, "err");
+      }
+    });
+    el("layout-ime-save")?.addEventListener("click", async () => {
+      try {
+        await saveLayoutToIme();
+      } catch (e) {
+        setStatus("layout-json-status", `保存失败：${e.message}`, "err");
+      }
+    });
+    el("theme-ime-load")?.addEventListener("click", async () => {
+      try {
+        await loadThemeFromIme();
+        await loadThemePrefsFromIme();
+      } catch (e) {
+        setStatus("theme-editor-status", `读取失败：${e.message}`, "err");
+      }
+    });
+    el("theme-ime-save")?.addEventListener("click", async () => {
+      try {
+        await saveThemeToIme();
+        await saveThemePrefsToIme();
+      } catch (e) {
+        setStatus("theme-editor-status", `保存失败：${e.message}`, "err");
+        setStatus("theme-qr-meta", `保存失败：${e.message}`, "err");
+      }
+    });
+    el("popup-ime-load")?.addEventListener("click", async () => {
+      try {
+        await loadPopupFromIme();
+      } catch (e) {
+        setStatus("popup-editor-status", `读取失败：${e.message}`, "err");
+      }
+    });
+    el("popup-ime-save")?.addEventListener("click", async () => {
+      try {
+        await savePopupToIme();
+      } catch (e) {
+        setStatus("popup-editor-status", `保存失败：${e.message}`, "err");
+      }
+    });
+  }
+
+  async function autoLoadImeDataOnStartup() {
+    if (!IME_API_BASE) return;
+    try {
+      await refreshImeLayoutProfiles();
+      await loadLayoutFromIme(getSelectedImeLayoutProfile());
+    } catch (e) {
+      setStatus("layout-json-status", `自动读取 IME 布局失败：${e.message}`, "err");
+    }
+    try {
+      await loadThemeFromIme();
+      await loadThemePrefsFromIme();
+    } catch (e) {
+      setStatus("theme-editor-status", `自动读取 IME 主题失败：${e.message}`, "err");
+    }
+    try {
+      await loadPopupFromIme();
+    } catch (e) {
+      setStatus("popup-editor-status", `自动读取 IME 弹出字符失败：${e.message}`, "err");
+    }
   }
 
   async function main() {
@@ -6489,6 +6837,8 @@
     setupThemeQrActions();
     setupPopupQrActions();
     setupThemeAppSyncUi();
+    setupImeBridgeActions();
+    await autoLoadImeDataOnStartup();
     const previewPanel = document.querySelector(".keyboard-preview-panel");
     if (previewPanel) {
       previewPanel.addEventListener("toggle", () => {
@@ -6530,6 +6880,9 @@
     setStatus("layout-qr-meta", "点击“生成二维码”后会自动按 App 协议分片编码", "");
     setStatus("theme-qr-meta", "点击“分享当前激活主题”可自动导出 ZIP 或二维码长图", "");
     setStatus("popup-qr-meta", "点击“生成二维码”可预览并下载弹出字符长图", "");
+    if (IME_API_BASE) {
+      setStatus("layout-qr-meta", `IME API：${IME_API_BASE}`, "");
+    }
   }
 
   main();
