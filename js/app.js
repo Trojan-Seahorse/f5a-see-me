@@ -2628,11 +2628,17 @@
   }
 
   function resolvePreviewPunctPlacement(key, preferred, keyHeight) {
-    if (preferred !== 'bottom') return preferred;
-    if (!keySubText(key)) return 'none';
-    // Match App behavior: fallback to top-right when stacked main+alt doesn't fit.
-    const stackedMinHeight = previewMainFontMaxForKey(key) + 10 + 1;
-    return keyHeight >= stackedMinHeight ? 'bottom' : 'top-right';
+    if (preferred === 'none' || !keySubText(key)) return 'none';
+    if (preferred === 'top-center') {
+      const stackedMinHeight = previewMainFontMaxForKey(key) + 10 + 1;
+      return keyHeight >= stackedMinHeight ? 'top-center' : 'top-right';
+    }
+    if (preferred === 'bottom') {
+      // Match App behavior: fallback to top-right when stacked main+alt doesn't fit.
+      const stackedMinHeight = previewMainFontMaxForKey(key) + 10 + 1;
+      return keyHeight >= stackedMinHeight ? 'bottom' : 'top-right';
+    }
+    return preferred;
   }
 
   function renderSelectors() {
@@ -2696,12 +2702,12 @@
             : (key.type === 'ReturnKey' || (cfg.gboardStyle && (key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey'))))
             ? 'gboard-pill'
             : '',
-          punctPlacement === 'bottom' ? 'punct-bottom' : ''
+          punctPlacement === 'bottom' ? 'punct-bottom' : punctPlacement === 'top-center' ? 'punct-top-center' : ''
         ].filter(Boolean).join(' ');
         const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
         const keyStyle = `--preview-key-bg:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};--preview-key-shadow:${previewColors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
         const alt = keySubText(key) && punctPlacement !== 'none'
-          ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
+          ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : punctPlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
         return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
@@ -6458,6 +6464,11 @@
           const mainH = Math.max(1, keyH - 12);
           drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, mainH, previewMainFontMaxForKey(key), fg);
           drawCenteredText(ctx, keySubText(key), keyX, keyY + mainH - 1, keyW, keyH - mainH + 1, 10, previewColors.altTextCss, 500, 6);
+        } else if (punctPlacement === 'top-center' && hasAlt) {
+          const altH = 10;
+          drawCenteredText(ctx, keySubText(key), keyX, keyY, keyW, altH, 10, previewColors.altTextCss, 500, 6);
+          const mainH = Math.max(1, keyH - altH);
+          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY + altH, keyW, mainH, previewMainFontMaxForKey(key), fg);
         } else {
           drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, keyH, previewMainFontMaxForKey(key), fg);
         }

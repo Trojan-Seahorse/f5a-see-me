@@ -1089,6 +1089,12 @@ input[type="checkbox"] {
   gap: 1px;
 }
 
+.layout-key.punct-top-center {
+  flex-direction: column-reverse;
+  justify-content: center;
+  gap: 1px;
+}
+
 .layout-key-main {
   line-height: 1;
   display: block;
@@ -1180,6 +1186,22 @@ input[type="checkbox"] {
   max-width: 100%;
   text-align: center;
   margin-top: 1px;
+}
+
+.layout-key-alt.top-center {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  max-width: calc(100% - 12px);
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  font-size: clamp(8px, 14cqw, 12px);
+  color: var(--sub);
+  line-height: 1;
 }
 
 .qr-wrap {
