@@ -6086,7 +6086,7 @@
     return await resp.blob();
   }
 
-  async function exportThemeAsZip(theme) {
+  async function buildThemeZipBlob(theme) {
     if (!window.JSZip) throw new Error("JSZip 未加载");
     const blob = await readThemeBackgroundBlob(theme);
     if (!blob) throw new Error("当前主题无可导出的背景图片");
@@ -6110,7 +6110,12 @@
     zip.file(`${baseName}.json`, `${prettyJson(exportTheme)}\n`);
     zip.file(exportTheme.backgroundImage.croppedFilePath, blob);
     zip.file(exportTheme.backgroundImage.srcFilePath, blob);
-    const zipBlob = await zip.generateAsync({ type: "blob" });
+    return await zip.generateAsync({ type: "blob" });
+  }
+
+  async function exportThemeAsZip(theme) {
+    const zipBlob = await buildThemeZipBlob(theme);
+    const baseName = (theme.name || "theme").replace(/[\\/:*?"<>|]/g, "_");
     downloadBlob(`${baseName}.zip`, zipBlob);
   }
 
@@ -6539,21 +6544,48 @@
   async function imeApiRequest(path, options = {}) {
     if (!IME_API_BASE) throw new Error("当前页面未配置 IME API 地址");
     const url = `${IME_API_BASE}${path}`;
+    const requestHeaders = {
+      ...(options.body instanceof Blob ? {} : { "Content-Type": "application/json" }),
+      ...(options.headers || {})
+    };
     const resp = await fetch(url, {
       cache: "no-store",
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {})
-      }
+      headers: requestHeaders
     });
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
       throw new Error(`${resp.status} ${resp.statusText}${text ? `: ${text}` : ""}`);
     }
+    if (options.responseType === "blob") return await resp.blob();
     const contentType = String(resp.headers.get("content-type") || "").toLowerCase();
     if (contentType.includes("application/json")) return await resp.json();
     return {};
+  }
+
+  async function loadThemePackageFromIme(themeName) {
+    const suffix = themeName ? `?name=${encodeURIComponent(themeName)}` : "";
+    const blob = await imeApiRequest(`/api/v1/theme/package${suffix}`, {
+      responseType: "blob",
+      headers: { "Accept": "application/zip" }
+    });
+    const file = new File([blob], `${themeName || "theme"}.zip`, { type: blob.type || "application/zip" });
+    return await decodeThemeFromZipFile(file);
+  }
+
+  async function enrichImeThemeDataWithPackage(themeData) {
+    if (!themeData?.backgroundImageObject) return themeData;
+    try {
+      const packaged = await loadThemePackageFromIme(themeData.name);
+      return {
+        ...themeData,
+        backgroundImage: packaged.backgroundImage || themeData.backgroundImage || "",
+        backgroundImageObject: packaged.backgroundImageObject || themeData.backgroundImageObject
+      };
+    } catch (error) {
+      console.warn("[web-editor] failed to load theme package", themeData.name, error);
+      return themeData;
+    }
   }
 
   function getSelectedImeLayoutProfile() {
@@ -6660,12 +6692,13 @@
       : [payload.theme || payload];
     const builtinCatalog = createBuiltinThemeCatalog();
     const dedup = new Map();
-    themeList.forEach((item) => {
+    for (const item of themeList) {
       const normalized = normalizeImportedThemePayload(item);
-      if (!normalized?.name) return;
-      if (dedup.has(normalized.name)) return;
-      dedup.set(normalized.name, normalized);
-    });
+      if (!normalized?.name) continue;
+      if (dedup.has(normalized.name)) continue;
+      const enriched = await enrichImeThemeDataWithPackage(normalized);
+      dedup.set(enriched.name, enriched);
+    }
     const customCatalog = Array.from(dedup.values()).map((themeData) => ({
       id: `custom-${Math.random().toString(36).slice(2, 10)}`,
       name: themeData.name,
@@ -6702,10 +6735,23 @@
       ...(current.backgroundImageObject ? { backgroundImage: deepClone(current.backgroundImageObject) } : { backgroundImage: null }),
       ...deepClone(current.colors)
     };
-    await imeApiRequest("/api/v1/theme", {
-      method: "PUT",
-      body: JSON.stringify({ theme: payload })
-    });
+    if (themeHasBackground(current)) {
+      const zipBlob = await buildThemeZipBlob({
+        ...current,
+        colors: deepClone(current.colors),
+        backgroundImageObject: current.backgroundImageObject ? deepClone(current.backgroundImageObject) : null
+      });
+      await imeApiRequest(`/api/v1/theme/package?name=${encodeURIComponent(current.name)}`, {
+        method: "PUT",
+        body: zipBlob,
+        headers: { "Content-Type": "application/zip" }
+      });
+    } else {
+      await imeApiRequest("/api/v1/theme", {
+        method: "PUT",
+        body: JSON.stringify({ theme: payload })
+      });
+    }
     setStatus("theme-editor-status", `主题已保存到 IME：${payload.name || ""}`, "ok");
     setStatus("theme-qr-meta", `主题已保存到 IME：${payload.name || ""}`, "ok");
   }
