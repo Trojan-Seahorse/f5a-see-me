@@ -452,6 +452,7 @@ input[type="checkbox"] {
   background-color: #10131b;
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
 }
 
 .theme-background-preview::after {
@@ -467,6 +468,7 @@ input[type="checkbox"] {
   inset: -18%;
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
 }
 
 .theme-background-preview.empty {
@@ -979,7 +981,7 @@ input[type="checkbox"] {
   padding: 10px;
   padding-top: calc(10px + var(--preview-top-bar-height, 0px));
   padding-bottom: calc(10px + var(--preview-bottom-padding, 0px));
-  background: #10131b;
+  background-color: #10131b;
   max-width: 760px;
   margin: 0 auto;
   --preview-row-gap: 8px;

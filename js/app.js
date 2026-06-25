@@ -668,12 +668,19 @@
         }
       }).catch(() => {});
     }
-    const backgroundStyle = buildThemeBackgroundCss(theme);
     root.style.backgroundColor = resolvePreviewSurfaceColor();
-    root.style.backgroundImage = backgroundStyle.backgroundImage;
-    root.style.backgroundSize = backgroundStyle.backgroundSize;
-    root.style.backgroundPosition = backgroundStyle.backgroundPosition;
-    root.style.backgroundBlendMode = backgroundStyle.backgroundBlendMode;
+    if (sourceUrl) {
+      root.style.backgroundImage = `url("${sourceUrl}")`;
+      root.style.backgroundSize = "cover";
+      root.style.backgroundPosition = "center";
+      root.style.backgroundBlendMode = "";
+    } else {
+      root.style.backgroundImage = "none";
+      root.style.backgroundSize = "";
+      root.style.backgroundPosition = "";
+      root.style.backgroundBlendMode = "";
+    }
+    root.style.backgroundRepeat = "no-repeat";
     root.style.borderColor = argbToCss(resolveThemeTokenColor("dividerColor"));
   }
 
@@ -1208,6 +1215,7 @@
         const placement = buildThemeBackgroundPlacement(spec, spec?.cropRect);
         image.style.backgroundSize = placement.backgroundSize;
         image.style.backgroundPosition = placement.backgroundPosition;
+        image.style.backgroundRepeat = "no-repeat";
         image.style.filter = `brightness(${themeBackgroundBrightness(spec)}%) blur(${themeBackgroundBlurRadius(spec)}px)`;
         image.style.transform = `rotate(${themeBackgroundRotation(spec)}deg) scale(1.08)`;
         preview.appendChild(image);
