@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-21T00:00+08:00";
+  const WEB_EDITOR_BUILD = "2026-06-25T15:08+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -324,6 +324,7 @@
     themeImportRunning: false,
     popupImportRunning: false,
     themeAssetUrlByPath: new Map(),
+    themeImageMetaByUrl: new Map(),
     dragKey: null,
     dragRow: null,
     dragRowNode: null,
@@ -385,7 +386,20 @@
       keyHGap: 3,
       keyVGap: 3,
       keyRadius: 4,
-      punctPos: 'bottom'
+      punctPos: 'bottom',
+      previewMetrics: null
+    },
+    themeCrop: {
+      imageWidth: 0,
+      imageHeight: 0,
+      scaleX: 1,
+      scaleY: 1,
+      rectPx: null,
+      dragMode: "",
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      startRect: null
     }
   };
 
@@ -645,11 +659,21 @@
     const root = el("layout-preview");
     if (!root) return;
     const theme = currentThemeEntry();
+    const sourceUrl = theme?.backgroundImage || resolveThemeAssetUrl(theme?.backgroundImageObject);
+    if (sourceUrl && !state.themeImageMetaByUrl.has(sourceUrl)) {
+      loadImageForCanvas(sourceUrl).then(() => {
+        if (currentThemeEntry()?.id === theme?.id) {
+          applyPreviewThemeSurface();
+          syncPreviewBlurMaskGeometry();
+        }
+      }).catch(() => {});
+    }
+    const backgroundStyle = buildThemeBackgroundCss(theme);
     root.style.backgroundColor = resolvePreviewSurfaceColor();
-    root.style.backgroundImage = theme?.backgroundImage ? `url("${theme.backgroundImage}")` : "none";
-    root.style.backgroundSize = theme?.backgroundImage ? "cover" : "";
-    root.style.backgroundPosition = theme?.backgroundImage ? "center" : "";
-    root.style.backgroundBlendMode = theme?.backgroundImage ? "multiply" : "";
+    root.style.backgroundImage = backgroundStyle.backgroundImage;
+    root.style.backgroundSize = backgroundStyle.backgroundSize;
+    root.style.backgroundPosition = backgroundStyle.backgroundPosition;
+    root.style.backgroundBlendMode = backgroundStyle.backgroundBlendMode;
     root.style.borderColor = argbToCss(resolveThemeTokenColor("dividerColor"));
   }
 
@@ -744,18 +768,29 @@
       const keyTextColor = argbToCss(normalizeColorValue(theme.colors.keyTextColor));
       const spaceBarColor = argbToCss(normalizeColorValue(theme.colors.spaceBarColor));
       const accentBg = argbToCss(normalizeColorValue(theme.colors.accentKeyBackgroundColor));
-      const previewStyle = `background-color:${escapeAttr(keyboardColor)};border-color:${escapeAttr(dividerColor)};${theme.backgroundImage ? `background-image:url('${escapeAttr(theme.backgroundImage)}');background-size:cover;background-position:center;` : ""}`;
+      const backgroundLayerStyle = buildThemeBackgroundImageLayerCss(theme);
+      const bgHasImage = backgroundLayerStyle.backgroundImage !== "none";
+      const bgImageCss = escapeAttr(backgroundLayerStyle.backgroundImage);
+      // Card is a thumbnail — use simple cover/center regardless of crop rect.
+      // The crop placement is for full-size layout preview, not scaled-down cards.
+      const previewStyle = `background-color:${escapeAttr(keyboardColor)};background-image:${bgImageCss};background-size:cover;background-position:center;`;
+      // Overlay only renders when there is an image; filter + transform on top
+      const bgOverlayStyle = bgHasImage
+        ? `background-image:${bgImageCss};background-size:cover;background-position:center;filter:${escapeAttr(backgroundLayerStyle.filter)};transform:${escapeAttr(backgroundLayerStyle.transform)};`
+        : "display:none;";
       return `
         <button type="button" class="theme-card ${theme.id === state.selectedThemeId ? "active" : ""}" data-theme-id="${escapeAttr(theme.id)}">
-          <div class="theme-card-preview" style="${previewStyle}">
+          <div class="theme-card-preview" style="${previewStyle}" data-theme-id="${escapeAttr(theme.id)}">
+            <span class="theme-card-preview-bg" style="${bgOverlayStyle}"></span>
             <span class="theme-card-preview-bar" style="background:${escapeAttr(barColor)}"></span>
             <span class="theme-card-preview-name" style="color:${escapeAttr(keyTextColor)}">${escapeHtml(theme.name)}</span>
-            <span class="theme-card-preview-space" style="background:${escapeAttr(spaceBarColor)}"></span>
-            <span class="theme-card-preview-return" style="background:${escapeAttr(accentBg)}"></span>
+            <span class="theme-card-preview-key theme-card-preview-space" style="--theme-card-key-bg:${escapeAttr(spaceBarColor)}"><span class="theme-card-preview-key-mask"></span><span class="theme-card-preview-key-tint"></span></span>
+            <span class="theme-card-preview-key theme-card-preview-return" style="--theme-card-key-bg:${escapeAttr(accentBg)}"><span class="theme-card-preview-key-mask"></span><span class="theme-card-preview-key-tint"></span></span>
           </div>
         </button>
       `;
     }).join("");
+    requestAnimationFrame(syncThemeCardBlurMaskGeometry);
     root.querySelectorAll(".theme-card").forEach((card) => {
       card.addEventListener("click", () => {
         const id = card.dataset.themeId;
@@ -765,6 +800,33 @@
         renderThemeEditor();
         syncThemeJsonFromState();
         syncLayoutUiFromState();
+      });
+    });
+  }
+
+  function syncThemeCardBlurMaskGeometry() {
+    const root = el("theme-list");
+    if (!root) return;
+    root.querySelectorAll(".theme-card-preview").forEach((preview) => {
+      const theme = state.themeCatalog.find((item) => item.id === preview.dataset.themeId);
+      if (!theme) return;
+      const sourceUrl = theme.backgroundImage || resolveThemeAssetUrl(theme.backgroundImageObject);
+      const blurRadius = themeBackgroundBlurRadius(theme.backgroundImageObject);
+      const brightness = themeBackgroundBrightness(theme.backgroundImageObject);
+      const enabled = !!sourceUrl && blurRadius > 0;
+      const previewRect = preview.getBoundingClientRect();
+      preview.style.setProperty("--theme-card-bg-url", enabled ? `url("${sourceUrl}")` : "none");
+      preview.style.setProperty("--theme-card-bg-width", `${Math.max(1, previewRect.width)}px`);
+      preview.style.setProperty("--theme-card-bg-height", `${Math.max(1, previewRect.height)}px`);
+      preview.style.setProperty("--theme-card-bg-blur", `${blurRadius}px`);
+      preview.style.setProperty("--theme-card-bg-bleed", `${Math.max(12, blurRadius * 2)}px`);
+      preview.style.setProperty("--theme-card-bg-brightness", `${brightness}%`);
+      preview.style.setProperty("--theme-card-bg-mask-opacity", enabled ? "1" : "0");
+      preview.style.setProperty("--theme-card-key-tint-opacity", enabled ? "0.58" : "1");
+      preview.querySelectorAll(".theme-card-preview-key").forEach((key) => {
+        const keyRect = key.getBoundingClientRect();
+        key.style.setProperty("--theme-card-bg-x", `${keyRect.left - previewRect.left}px`);
+        key.style.setProperty("--theme-card-bg-y", `${keyRect.top - previewRect.top}px`);
       });
     });
   }
@@ -793,17 +855,407 @@
     const croppedFilePath = typeof raw.croppedFilePath === "string" ? raw.croppedFilePath : "";
     const srcFilePath = typeof raw.srcFilePath === "string" ? raw.srcFilePath : "";
     if (!croppedFilePath && !srcFilePath) return null;
-    const brightness = Number.isFinite(Number(raw.brightness)) ? Number(raw.brightness) : 70;
-    const cropRotation = Number.isFinite(Number(raw.cropRotation)) ? Number(raw.cropRotation) : 0;
-    const blurRadius = Number.isFinite(Number(raw.blurRadius)) ? Number(raw.blurRadius) : 0;
+    const brightness = clampNumber(raw.brightness, 0, 100, 70);
+    const cropRotation = normalizeThemeBackgroundRotation(raw.cropRotation);
+    const blurRadius = clampNumber(raw.blurRadius, 0, 25, 0);
     return {
       croppedFilePath,
       srcFilePath,
       brightness,
       cropRect: raw.cropRect ?? null,
       cropRotation,
-      blurRadius
+      blurRadius,
+      imageWidthHint: Number.isFinite(Number(raw.imageWidthHint)) ? Number(raw.imageWidthHint) : undefined,
+      imageHeightHint: Number.isFinite(Number(raw.imageHeightHint)) ? Number(raw.imageHeightHint) : undefined
     };
+  }
+
+  function clampNumber(value, min, max, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, number));
+  }
+
+  function normalizeThemeBackgroundRotation(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    const normalized = ((Math.round(number / 90) * 90) % 360 + 360) % 360;
+    return normalized;
+  }
+
+  function themeBackgroundBrightness(spec) {
+    return clampNumber(spec?.brightness, 0, 100, 70);
+  }
+
+  function themeBackgroundBlurRadius(spec) {
+    return clampNumber(spec?.blurRadius, 0, 25, 0);
+  }
+
+  function themeBackgroundRotation(spec) {
+    return normalizeThemeBackgroundRotation(spec?.cropRotation);
+  }
+
+  function buildThemeBackgroundPlacement(spec, cropRect, sourceUrl = "") {
+    const rect = rectFromThemeCropRect(cropRect);
+    if (!rect) {
+      return {
+        backgroundSize: "cover",
+        backgroundPosition: "center"
+      };
+    }
+    const meta = sourceUrl ? state.themeImageMetaByUrl.get(sourceUrl) : null;
+    const imageWidth = Math.max(1, Number(meta?.width) || Number(spec?.imageWidthHint) || rect.right);
+    const imageHeight = Math.max(1, Number(meta?.height) || Number(spec?.imageHeightHint) || rect.bottom);
+    const cropWidth = Math.max(1, rect.right - rect.left);
+    const cropHeight = Math.max(1, rect.bottom - rect.top);
+    const maxLeft = Math.max(1, imageWidth - cropWidth);
+    const maxTop = Math.max(1, imageHeight - cropHeight);
+    return {
+      backgroundSize: `${(imageWidth / cropWidth) * 100}% ${(imageHeight / cropHeight) * 100}%`,
+      backgroundPosition: `${(rect.left / maxLeft) * 100}% ${(rect.top / maxTop) * 100}%`
+    };
+  }
+
+  function buildThemeBackgroundCss(theme) {
+    const sourceUrl = theme?.backgroundImage || resolveThemeAssetUrl(theme?.backgroundImageObject);
+    if (!sourceUrl) {
+      return {
+        backgroundImage: "none",
+        backgroundSize: "",
+        backgroundPosition: "",
+        backgroundBlendMode: ""
+      };
+    }
+    const spec = theme?.backgroundImageObject || {};
+    const brightness = themeBackgroundBrightness(spec);
+    const blur = themeBackgroundBlurRadius(spec);
+    const dimAlpha = Math.max(0, Math.min(1, (100 - brightness) / 100));
+    const placement = buildThemeBackgroundPlacement(spec, spec.cropRect, sourceUrl);
+    const imageLayer = `url("${sourceUrl}")`;
+    const dimLayer = `linear-gradient(rgba(0,0,0,${dimAlpha}), rgba(0,0,0,${dimAlpha}))`;
+    const blurLayer = blur > 0 ? `linear-gradient(rgba(255,255,255,${Math.min(0.18, blur / 160)}), rgba(255,255,255,${Math.min(0.18, blur / 160)}))` : "";
+    const layers = [blurLayer, dimLayer, imageLayer].filter(Boolean);
+    return {
+      backgroundImage: layers.join(", "),
+      backgroundSize: layers.map(() => placement.backgroundSize).join(", "),
+      backgroundPosition: layers.map(() => placement.backgroundPosition).join(", "),
+      backgroundBlendMode: layers.length > 1 ? layers.slice(0, -1).map(() => "normal").join(", ") : ""
+    };
+  }
+
+  function buildThemeBackgroundImageLayerCss(theme) {
+    const sourceUrl = theme?.backgroundImage || resolveThemeAssetUrl(theme?.backgroundImageObject);
+    const spec = theme?.backgroundImageObject || {};
+    if (!sourceUrl) {
+      return {
+        backgroundImage: "none",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        filter: "none",
+        transform: "none"
+      };
+    }
+    const placement = buildThemeBackgroundPlacement(spec, spec.cropRect, sourceUrl);
+    return {
+      backgroundImage: `url("${sourceUrl}")`,
+      backgroundSize: placement.backgroundSize,
+      backgroundPosition: placement.backgroundPosition,
+      filter: `blur(${themeBackgroundBlurRadius(spec)}px) brightness(${themeBackgroundBrightness(spec)}%)`,
+      transform: `rotate(${themeBackgroundRotation(spec)}deg) scale(${themeBackgroundBlurRadius(spec) > 0 ? 1.12 : 1})`
+    };
+  }
+
+  function rectFromThemeCropRect(cropRect) {
+    if (!cropRect || typeof cropRect !== "object") return null;
+    const left = Number(cropRect.left);
+    const top = Number(cropRect.top);
+    const right = Number(cropRect.right);
+    const bottom = Number(cropRect.bottom);
+    if (![left, top, right, bottom].every(Number.isFinite)) return null;
+    if (right <= left || bottom <= top) return null;
+    return { left, top, right, bottom };
+  }
+
+  function clampCropRect(rect, width, height) {
+    if (!rect) return null;
+    const left = Math.max(0, Math.min(width - 1, rect.left));
+    const top = Math.max(0, Math.min(height - 1, rect.top));
+    const right = Math.max(left + 1, Math.min(width, rect.right));
+    const bottom = Math.max(top + 1, Math.min(height, rect.bottom));
+    return { left, top, right, bottom };
+  }
+
+  function syncThemeCropSelectionUi() {
+    const selection = el("theme-crop-selection");
+    const image = el("theme-crop-image");
+    const stage = el("theme-crop-stage");
+    if (!selection) return;
+    const rect = state.themeCrop.rectPx;
+    if (!rect) {
+      selection.hidden = true;
+      return;
+    }
+    const imageRect = image.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    selection.hidden = false;
+    selection.style.left = `${rect.left + imageRect.left - stageRect.left}px`;
+    selection.style.top = `${rect.top + imageRect.top - stageRect.top}px`;
+    selection.style.width = `${rect.right - rect.left}px`;
+    selection.style.height = `${rect.bottom - rect.top}px`;
+  }
+
+  async function openThemeCropDialog() {
+    const theme = currentThemeEntry();
+    if (!theme?.backgroundImageObject) throw new Error("当前主题没有可裁剪的背景图片");
+    const sourceUrl = theme.backgroundImage || resolveThemeAssetUrl(theme.backgroundImageObject);
+    if (!sourceUrl) throw new Error("当前背景图片不可用");
+    const dialog = el("theme-crop-dialog");
+    const image = el("theme-crop-image");
+    const selection = el("theme-crop-selection");
+    const loaded = await loadImageForCanvas(sourceUrl);
+    const applyLoadedState = () => {
+      const imageRect = image.getBoundingClientRect();
+      state.themeCrop.imageWidth = loaded.naturalWidth || loaded.width || 1;
+      state.themeCrop.imageHeight = loaded.naturalHeight || loaded.height || 1;
+      state.themeCrop.scaleX = state.themeCrop.imageWidth / Math.max(1, imageRect.width);
+      state.themeCrop.scaleY = state.themeCrop.imageHeight / Math.max(1, imageRect.height);
+      const existingRect = rectFromThemeCropRect(theme.backgroundImageObject.cropRect);
+      state.themeCrop.rectPx = existingRect
+        ? {
+            left: existingRect.left / state.themeCrop.scaleX,
+            top: existingRect.top / state.themeCrop.scaleY,
+            right: existingRect.right / state.themeCrop.scaleX,
+            bottom: existingRect.bottom / state.themeCrop.scaleY
+          }
+        : {
+            left: imageRect.width * 0.15,
+            top: imageRect.height * 0.12,
+            right: imageRect.width * 0.85,
+            bottom: imageRect.height * 0.88
+          };
+      state.themeCrop.rectPx = clampCropRect(state.themeCrop.rectPx, imageRect.width, imageRect.height);
+      syncThemeCropSelectionUi();
+      setStatus("theme-crop-status", "拖动选区或四角控制点以调整裁剪范围", "");
+    };
+    image.src = sourceUrl;
+    selection.hidden = true;
+    if (!dialog.open) dialog.showModal();
+    requestAnimationFrame(applyLoadedState);
+  }
+
+  function applyThemeCropRectFromDialog() {
+    const theme = currentThemeEntry();
+    const rect = state.themeCrop.rectPx;
+    if (!theme?.backgroundImageObject || !rect) return;
+    const cropRect = {
+      left: Math.round(rect.left * state.themeCrop.scaleX),
+      top: Math.round(rect.top * state.themeCrop.scaleY),
+      right: Math.round(rect.right * state.themeCrop.scaleX),
+      bottom: Math.round(rect.bottom * state.themeCrop.scaleY)
+    };
+    updateCurrentThemeBackgroundSpec({
+      cropRect,
+      imageWidthHint: state.themeCrop.imageWidth,
+      imageHeightHint: state.themeCrop.imageHeight
+    }, "背景裁剪已更新");
+    el("theme-crop-dialog").close();
+  }
+
+  function installThemeCropInteractions() {
+    const stage = el("theme-crop-stage");
+    const selection = el("theme-crop-selection");
+    const image = el("theme-crop-image");
+    if (!stage || !selection || !image || stage.dataset.cropBound === "1") return;
+    stage.dataset.cropBound = "1";
+
+    const pickMode = (target) => {
+      if (target.classList.contains("handle-nw")) return "nw";
+      if (target.classList.contains("handle-ne")) return "ne";
+      if (target.classList.contains("handle-sw")) return "sw";
+      if (target.classList.contains("handle-se")) return "se";
+      if (target === selection) return "move";
+      return "new";
+    };
+
+    stage.addEventListener("pointerdown", (ev) => {
+      if (!image.src) return;
+      const imageRect = image.getBoundingClientRect();
+      const x = ev.clientX - imageRect.left;
+      const y = ev.clientY - imageRect.top;
+      if (x < 0 || y < 0 || x > imageRect.width || y > imageRect.height) return;
+      state.themeCrop.pointerId = ev.pointerId;
+      state.themeCrop.dragMode = pickMode(ev.target);
+      state.themeCrop.startX = x;
+      state.themeCrop.startY = y;
+      state.themeCrop.startRect = state.themeCrop.rectPx ? { ...state.themeCrop.rectPx } : null;
+      if (state.themeCrop.dragMode === "new" || !state.themeCrop.startRect) {
+        state.themeCrop.dragMode = "new";
+        state.themeCrop.startRect = { left: x, top: y, right: x, bottom: y };
+        state.themeCrop.rectPx = { ...state.themeCrop.startRect };
+        syncThemeCropSelectionUi();
+      }
+      stage.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+
+    stage.addEventListener("pointermove", (ev) => {
+      if (state.themeCrop.pointerId !== ev.pointerId || !state.themeCrop.startRect) return;
+      const imageRect = image.getBoundingClientRect();
+      const x = Math.max(0, Math.min(imageRect.width, ev.clientX - imageRect.left));
+      const y = Math.max(0, Math.min(imageRect.height, ev.clientY - imageRect.top));
+      const dx = x - state.themeCrop.startX;
+      const dy = y - state.themeCrop.startY;
+      const start = state.themeCrop.startRect;
+      let next = { ...start };
+      switch (state.themeCrop.dragMode) {
+        case "move":
+          next = {
+            left: start.left + dx,
+            top: start.top + dy,
+            right: start.right + dx,
+            bottom: start.bottom + dy
+          };
+          break;
+        case "nw":
+          next.left += dx;
+          next.top += dy;
+          break;
+        case "ne":
+          next.right += dx;
+          next.top += dy;
+          break;
+        case "sw":
+          next.left += dx;
+          next.bottom += dy;
+          break;
+        case "se":
+          next.right += dx;
+          next.bottom += dy;
+          break;
+        case "new":
+        default:
+          next = {
+            left: Math.min(state.themeCrop.startX, x),
+            top: Math.min(state.themeCrop.startY, y),
+            right: Math.max(state.themeCrop.startX, x),
+            bottom: Math.max(state.themeCrop.startY, y)
+          };
+          break;
+      }
+      if (state.themeCrop.dragMode === "move") {
+        const width = next.right - next.left;
+        const height = next.bottom - next.top;
+        next.left = Math.max(0, Math.min(imageRect.width - width, next.left));
+        next.top = Math.max(0, Math.min(imageRect.height - height, next.top));
+        next.right = next.left + width;
+        next.bottom = next.top + height;
+      } else {
+        if (next.right - next.left < 12) {
+          if (state.themeCrop.dragMode === "nw" || state.themeCrop.dragMode === "sw") {
+            next.left = next.right - 12;
+          } else {
+            next.right = next.left + 12;
+          }
+        }
+        if (next.bottom - next.top < 12) {
+          if (state.themeCrop.dragMode === "nw" || state.themeCrop.dragMode === "ne") {
+            next.top = next.bottom - 12;
+          } else {
+            next.bottom = next.top + 12;
+          }
+        }
+      }
+      state.themeCrop.rectPx = clampCropRect(next, imageRect.width, imageRect.height);
+      syncThemeCropSelectionUi();
+      ev.preventDefault();
+    });
+
+    const finish = () => {
+      state.themeCrop.pointerId = null;
+      state.themeCrop.dragMode = "";
+      state.themeCrop.startRect = null;
+    };
+    stage.addEventListener("pointerup", finish);
+    stage.addEventListener("pointercancel", finish);
+    stage.addEventListener("lostpointercapture", finish);
+  }
+
+  function renderThemeBackgroundEditor() {
+    const theme = currentThemeEntry();
+    const card = el("theme-background-card");
+    if (!card) return;
+    const editable = !!theme && !theme.builtin;
+    card.hidden = !editable;
+    if (!editable) return;
+    const spec = theme.backgroundImageObject;
+    const sourceUrl = theme.backgroundImage || resolveThemeAssetUrl(spec);
+    const preview = el("theme-background-preview");
+    const meta = el("theme-background-meta");
+    const brightnessInput = el("theme-background-brightness");
+    const brightnessValue = el("theme-background-brightness-value");
+    const blurInput = el("theme-background-blur");
+    const blurValue = el("theme-background-blur-value");
+    const rotationInput = el("theme-background-rotation");
+    const cropInput = el("theme-background-crop-rect");
+    const hasBackground = !!sourceUrl && !!spec;
+    if (preview) {
+      preview.innerHTML = "";
+      preview.classList.toggle("empty", !hasBackground);
+      if (hasBackground) {
+        const image = document.createElement("div");
+        image.className = "theme-background-preview-image";
+        image.style.backgroundImage = `url("${sourceUrl}")`;
+        const placement = buildThemeBackgroundPlacement(spec, spec?.cropRect);
+        image.style.backgroundSize = placement.backgroundSize;
+        image.style.backgroundPosition = placement.backgroundPosition;
+        image.style.filter = `brightness(${themeBackgroundBrightness(spec)}%) blur(${themeBackgroundBlurRadius(spec)}px)`;
+        image.style.transform = `rotate(${themeBackgroundRotation(spec)}deg) scale(1.08)`;
+        preview.appendChild(image);
+      } else {
+        preview.textContent = "未设置背景图片";
+      }
+    }
+    if (meta) {
+      meta.textContent = hasBackground
+        ? `${spec.croppedFilePath || spec.srcFilePath || "背景图片"}`
+        : "导入图片后可编辑亮度、模糊和旋转参数";
+      meta.className = "status";
+    }
+    if (brightnessInput) {
+      brightnessInput.disabled = !hasBackground;
+      brightnessInput.value = String(themeBackgroundBrightness(spec));
+    }
+    if (brightnessValue) brightnessValue.textContent = `${themeBackgroundBrightness(spec)}%`;
+    if (blurInput) {
+      blurInput.disabled = !hasBackground;
+      blurInput.value = String(themeBackgroundBlurRadius(spec));
+    }
+    if (blurValue) blurValue.textContent = themeBackgroundBlurRadius(spec) === 0 ? "无" : String(themeBackgroundBlurRadius(spec));
+    if (rotationInput) {
+      rotationInput.disabled = !hasBackground;
+      rotationInput.value = String(themeBackgroundRotation(spec));
+    }
+    if (cropInput) {
+      cropInput.disabled = !hasBackground;
+      const cropRect = rectFromThemeCropRect(spec?.cropRect);
+      cropInput.value = cropRect ? `${cropRect.left},${cropRect.top} - ${cropRect.right},${cropRect.bottom}` : "";
+    }
+  }
+
+  function updateCurrentThemeBackgroundSpec(patch, message = "图片主题参数已更新") {
+    const theme = currentThemeEntry();
+    if (!theme || theme.builtin || !theme.backgroundImageObject) return;
+    const nextSpec = normalizeThemeBackgroundImageObject({
+      ...theme.backgroundImageObject,
+      ...patch
+    });
+    if (!nextSpec) return;
+    theme.backgroundImageObject = nextSpec;
+    renderThemeBackgroundEditor();
+    renderThemeList();
+    syncThemeJsonFromState();
+    syncLayoutUiFromState();
+    setStatus("theme-editor-status", message, "ok");
   }
 
   function registerThemeAssetPath(path, url) {
@@ -848,14 +1300,26 @@
     }
     const themeObj = themeRaw && typeof themeRaw === "object" ? themeRaw : {};
     const colorsSource = themeObj.colors && typeof themeObj.colors === "object" ? themeObj.colors : themeObj;
-    const backgroundImageObject = normalizeThemeBackgroundImageObject(themeObj.backgroundImage);
-    return {
-      name: typeof themeObj.name === "string" && themeObj.name.trim() ? themeObj.name.trim() : "Imported Theme",
-      isDark: !!themeObj.isDark,
-      colors: normalizeThemeColors(colorsSource),
-      backgroundImage: typeof themeObj.backgroundImage === "string" ? themeObj.backgroundImage : "",
-      backgroundImageObject
-    };
+   const themeName = typeof themeObj.name === "string" && themeObj.name.trim() ? themeObj.name.trim() : "Imported Theme";
+   // IME may return background image paths without the theme-name directory prefix.
+   // Ensure paths include the directory so they match the ZIP package structure.
+   const safeDir = themeName.replace(/[\\/:*?"<>|]/g, "_");
+   const rawBg = themeObj.backgroundImage;
+   const fixedBg = rawBg && typeof rawBg === "object"
+     ? { ...rawBg,
+         croppedFilePath: typeof rawBg.croppedFilePath === "string" && !rawBg.croppedFilePath.startsWith(safeDir + "/")
+           ? safeDir + "/" + rawBg.croppedFilePath : rawBg.croppedFilePath,
+         srcFilePath: typeof rawBg.srcFilePath === "string" && !rawBg.srcFilePath.startsWith(safeDir + "/")
+           ? safeDir + "/" + rawBg.srcFilePath : rawBg.srcFilePath }
+     : rawBg;
+   const backgroundImageObject = normalizeThemeBackgroundImageObject(fixedBg);
+   return {
+     name: themeName,
+     isDark: !!themeObj.isDark,
+     colors: normalizeThemeColors(colorsSource),
+     backgroundImage: typeof themeObj.backgroundImage === "string" ? themeObj.backgroundImage : "",
+     backgroundImageObject
+   };
   }
 
   function addImportedThemeEntry(themeData, sourceLabel = "已导入主题") {
@@ -909,7 +1373,10 @@
     if (leftRoot) leftRoot.innerHTML = items.slice(0, 4).join("");
     if (rightRoot) rightRoot.innerHTML = items.slice(4, 8).join("");
     if (mobileRoot) mobileRoot.innerHTML = items.join("");
-    requestAnimationFrame(() => balanceThemeSideHeights());
+    requestAnimationFrame(() => {
+      balanceThemeSideHeights();
+      syncPreviewBlurMaskGeometry();
+    });
   }
 
   function normalizePopupEntries(raw) {
@@ -1418,6 +1885,7 @@
     const theme = currentThemeEntry();
     const editable = !!theme && !theme.builtin;
     setThemeJsonEditable(editable);
+    renderThemeBackgroundEditor();
     const rows = el("theme-color-rows");
     if (!rows) return;
     rows.hidden = !editable;
@@ -1587,6 +2055,7 @@
         registerThemeAssetForBackground(theme.backgroundImageObject, previewUrl);
       }
       renderThemeList();
+      renderThemeBackgroundEditor();
       syncThemeJsonFromState();
       syncLayoutUiFromState();
       setStatus("theme-editor-status", "背景图片已更新", "ok");
@@ -1601,6 +2070,39 @@
       syncThemeJsonFromState();
       syncLayoutUiFromState();
       setStatus("theme-editor-status", "已清除背景图片", "ok");
+    });
+    el("theme-background-brightness")?.addEventListener("input", (ev) => {
+      updateCurrentThemeBackgroundSpec({ brightness: Number(ev.target.value) }, "背景亮度已更新");
+    });
+    el("theme-background-blur")?.addEventListener("input", (ev) => {
+      updateCurrentThemeBackgroundSpec({ blurRadius: Number(ev.target.value) }, "背景模糊已更新");
+    });
+    el("theme-background-rotation")?.addEventListener("change", (ev) => {
+      updateCurrentThemeBackgroundSpec({ cropRotation: Number(ev.target.value) }, "背景旋转已更新");
+    });
+    el("theme-background-open-crop")?.addEventListener("click", async () => {
+      try {
+        await openThemeCropDialog();
+      } catch (e) {
+        setStatus("theme-editor-status", `打开裁剪失败：${e.message}`, "err");
+      }
+    });
+    el("theme-crop-cancel")?.addEventListener("click", () => el("theme-crop-dialog").close());
+    el("theme-crop-apply")?.addEventListener("click", () => applyThemeCropRectFromDialog());
+    el("theme-crop-reset")?.addEventListener("click", () => {
+      const image = el("theme-crop-image");
+      const rect = image.getBoundingClientRect();
+      state.themeCrop.rectPx = {
+        left: rect.width * 0.15,
+        top: rect.height * 0.12,
+        right: rect.width * 0.85,
+        bottom: rect.height * 0.88
+      };
+      syncThemeCropSelectionUi();
+    });
+    el("theme-crop-clear")?.addEventListener("click", () => {
+      updateCurrentThemeBackgroundSpec({ cropRect: null }, "背景裁剪已清除");
+      el("theme-crop-dialog").close();
     });
     el("theme-export-json").addEventListener("click", () => {
       const theme = currentThemeEntry();
@@ -2162,13 +2664,21 @@
     const cfg = state.themeAppSync;
     const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
     const punctPos = cfg.punctPos || 'bottom';
+    const previewMetrics = resolvePreviewMetrics();
+    const previewContentHeight = resolvePreviewContentHeight(rows);
     applyPreviewThemeSurface();
     root.style.setProperty('--preview-row-gap', '8px');
     root.style.setProperty('--preview-key-hgap', `${cfg.keyHGap || 0}px`);
     root.style.setProperty('--preview-key-vgap', `${keyVGap}px`);
     root.style.setProperty('--preview-key-radius', `${cfg.keyRadius || 0}px`);
+    root.style.setProperty('--preview-keyboard-max-width', `${previewMetrics?.maxWidth || 720}px`);
+    root.style.setProperty('--preview-side-padding', `${previewMetrics?.sidePadding || 0}px`);
+    root.style.setProperty('--preview-bottom-padding', `${previewMetrics?.bottomPadding || 0}px`);
+    root.style.setProperty('--preview-top-bar-height', `${previewMetrics?.topBarHeight || 0}px`);
     root.innerHTML = rows.map((row, rowIndex) => {
-      const rowHeight = effectiveRowHeight(rowPercents[rowIndex] ?? 0);
+      const rowHeight = previewContentHeight
+        ? Math.max(28, Math.round(previewContentHeight * (rowPercents[rowIndex] || 0) / 100))
+        : effectiveRowHeight(rowPercents[rowIndex] ?? 0);
       const keyHeight = effectivePreviewKeyHeight(rowHeight, keyVGap);
       const widths = resolveRegularRowWidths(row);
       return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${row.map((key, keyIndex) => {
@@ -2189,18 +2699,82 @@
           punctPlacement === 'bottom' ? 'punct-bottom' : ''
         ].filter(Boolean).join(' ');
         const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
-        const keyStyle = `background:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};--preview-key-shadow:${previewColors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
+        const keyStyle = `--preview-key-bg:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};--preview-key-shadow:${previewColors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
         const alt = keySubText(key) && punctPlacement !== 'none'
           ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
-    requestAnimationFrame(fitLayoutPreviewText);
+    requestAnimationFrame(() => {
+      pinPreviewContainerWidth();
+      syncPreviewBlurMaskGeometry();
+      fitLayoutPreviewText();
+    });
     const height = getHeightOverride();
     setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}`, "");
     renderThemeSupplementPreview();
     updateFixedChromeMetrics();
+  }
+
+  function pinPreviewContainerWidth() {
+    const root = el("layout-preview");
+    if (!root) return;
+    // On narrow viewports, CSS mobile rules set width:100% — don't override
+    if (window.innerWidth <= 1080) return;
+    // Measure max row width after layout settles, set container to match
+    const keysRows = root.querySelectorAll(".layout-row .keys");
+    let maxW = 0;
+    keysRows.forEach((row) => { maxW = Math.max(maxW, row.offsetWidth); });
+    if (maxW > 0) {
+      // 20 = 10px padding * 2 (box-sizing:border-box, no border)
+      root.style.width = (maxW + 22) + "px";
+    }
+  }
+
+  function syncPreviewBlurMaskGeometry() {
+    const root = el("layout-preview");
+    const theme = currentThemeEntry();
+    if (!root || !theme) return;
+    const sourceUrl = theme.backgroundImage || resolveThemeAssetUrl(theme.backgroundImageObject);
+    const blurRadius = themeBackgroundBlurRadius(theme.backgroundImageObject);
+    const brightness = themeBackgroundBrightness(theme.backgroundImageObject);
+    const enabled = !!sourceUrl && blurRadius > 0;
+    const rootRect = root.getBoundingClientRect();
+    root.style.setProperty("--preview-bg-url", enabled ? `url("${sourceUrl}")` : "none");
+
+    // Use center-crop sizing (matching Android's calculateCenterCropSource)
+    // instead of stretching the image to the container.
+    const meta = sourceUrl ? state.themeImageMetaByUrl.get(sourceUrl) : null;
+    const imgW = Number(meta?.width) || 0;
+    const imgH = Number(meta?.height) || 0;
+    let bgWidth, bgHeight, cropOffsetX, cropOffsetY;
+    if (imgW > 0 && imgH > 0 && rootRect.width > 0 && rootRect.height > 0) {
+      const scale = Math.max(rootRect.width / imgW, rootRect.height / imgH);
+      bgWidth = imgW * scale;
+      bgHeight = imgH * scale;
+      cropOffsetX = (bgWidth - rootRect.width) / 2;
+      cropOffsetY = (bgHeight - rootRect.height) / 2;
+    } else {
+      // Fallback: stretch to container (no center-crop without image dimensions)
+      bgWidth = rootRect.width;
+      bgHeight = rootRect.height;
+      cropOffsetX = 0;
+      cropOffsetY = 0;
+    }
+    root.style.setProperty("--preview-bg-width", `${Math.max(1, bgWidth)}px`);
+    root.style.setProperty("--preview-bg-height", `${Math.max(1, bgHeight)}px`);
+
+    root.style.setProperty("--preview-bg-blur", `${blurRadius}px`);
+    root.style.setProperty("--preview-bg-bleed", `${Math.max(16, blurRadius * 2)}px`);
+    root.style.setProperty("--preview-bg-brightness", `${brightness}%`);
+    root.style.setProperty("--preview-bg-mask-opacity", enabled ? "1" : "0");
+    root.style.setProperty("--preview-bg-key-tint-opacity", enabled ? "0.58" : "1");
+    root.querySelectorAll(".layout-key").forEach((key) => {
+      const rect = key.getBoundingClientRect();
+      key.style.setProperty("--preview-bg-x", `${rect.left - rootRect.left + cropOffsetX}px`);
+      key.style.setProperty("--preview-bg-y", `${rect.top - rootRect.top + cropOffsetY}px`);
+    });
   }
 
   function fitLayoutPreviewText() {
@@ -2257,15 +2831,21 @@
     const naturalHeight = shell?.offsetHeight || 220;
     if (shell) shell.style.zoom = savedZoom || "";
 
-    // Scale preview based on viewport height:
-    // - Phone (touch): always generous (ratio 0.22, floor 200)
-    // - Tall desktop (>900px): mostly natural size (ratio 0.22, floor 200)
-    // - Short desktop (≤900px, high-DPI): aggressive (ratio 0.16, floor 140)
-    const vh = window.innerHeight;
+    // Scale preview based on viewport height (CSS pixels at 100% browser zoom).
+    // Derive this from physical screen dimensions so it stays stable regardless of
+    // browser Ctrl+/- zoom on desktop. On Android WebView without browser zoom,
+    // outerWidth/innerWidth ratio ≈ 1 and this degenerates to the DPR division.
+
+    // Estimate browser zoom factor (desktop Ctrl+/-); ≈ 1 on mobile / WebView.
+    const browserZoom = (window.outerWidth || window.innerWidth) / Math.max(1, window.innerWidth);
+    // Native device pixel ratio (independent of browser zoom).
+    const nativeDpr = (window.devicePixelRatio || 1) / Math.max(0.5, browserZoom);
+    const cssVh = screen.height / nativeDpr;
+
     const isMobile = navigator.maxTouchPoints > 0;
-    const isShortDesktop = !isMobile && vh <= 900;
+    const isShortDesktop = !isMobile && cssVh <= 900;
     const ratio = isShortDesktop ? 0.16 : 0.22;
-    const targetMax = Math.max(vh * ratio, isShortDesktop ? 140 : 200);
+    const targetMax = Math.max(cssVh * ratio, isShortDesktop ? 140 : 200);
     let scale = 1;
     if (naturalHeight > targetMax && naturalHeight > 0) {
       scale = Math.max(0.45, targetMax / naturalHeight);
@@ -2327,6 +2907,62 @@
     }
 
     return distributed.map((value) => value * 100 / sum);
+  }
+
+  function normalizePreviewMetrics(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const screenWidthPx = Number(raw.screenWidthPx);
+    const screenHeightPx = Number(raw.screenHeightPx);
+    const keyboardHeightPx = Number(raw.keyboardHeightPx);
+    if (!Number.isFinite(screenWidthPx) || !Number.isFinite(screenHeightPx) || !Number.isFinite(keyboardHeightPx)) {
+      return null;
+    }
+    return {
+      screenWidthPx,
+      screenHeightPx,
+      keyboardHeightPx,
+      density: Number(raw.density) || 1,
+      densityDpi: Number(raw.densityDpi) || 0,
+      orientation: String(raw.orientation || ""),
+      keyboardHeightPercent: Number(raw.keyboardHeightPercent) || 0,
+      keyboardSidePaddingPx: Number(raw.keyboardSidePaddingPx) || 0,
+      keyboardBottomPaddingPx: Number(raw.keyboardBottomPaddingPx) || 0,
+      kawaiiBarHeightPx: Number(raw.kawaiiBarHeightPx) || 0
+    };
+  }
+
+  function resolvePreviewMetrics() {
+    const metrics = state.themeAppSync?.previewMetrics;
+    if (!metrics || !Number.isFinite(Number(metrics.screenWidthPx)) || !Number.isFinite(Number(metrics.keyboardHeightPx))) {
+      return null;
+    }
+    const screenWidthPx = Math.max(1, Number(metrics.screenWidthPx));
+    const keyboardHeightPx = Math.max(1, Number(metrics.keyboardHeightPx));
+    const density = Math.max(0.1, Number(metrics.density) || 1);
+    const maxWidth = Math.min(720, Math.max(320, screenWidthPx / density));
+    // Target height preserves phone's keyboard view aspect ratio (keys area, excluding kawaii bar and bottom padding)
+    const targetHeight = Math.max(120, maxWidth * keyboardHeightPx / screenWidthPx);
+    const sideDp = Math.max(0, Number(metrics.keyboardSidePaddingPx || 0) / density);
+    const bottomDp = Math.max(0, Number(metrics.keyboardBottomPaddingPx || 0) / density);
+    // Kawaii bar sits above the keyboard view in the IME; scale to preview dp space.
+    const topBarDp = Math.max(0, Number(metrics.kawaiiBarHeightPx || 0) / density * maxWidth / (screenWidthPx / density));
+    return {
+      maxWidth,
+      targetHeight,
+      sidePadding: Math.min(maxWidth / 3, sideDp),
+      bottomPadding: Math.min(targetHeight / 3, bottomDp),
+      topBarHeight: topBarDp
+    };
+  }
+
+  function resolvePreviewContentHeight(rows) {
+    const metrics = resolvePreviewMetrics();
+    if (!metrics) return null;
+    const rowCount = Math.max(1, rows.length);
+    // targetHeight represents keyboard view height (keys area), which does NOT include
+    // bottom padding. bottomPadding is a separate space below the keys in the Android layout.
+    // No rowGap subtraction needed (CSS margin-bottom on rows was removed).
+    return Math.max(rowCount * 28, metrics.targetHeight);
   }
 
   function effectiveRowHeight(percent) {
@@ -5646,28 +6282,59 @@
         return;
       }
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.onload = () => {
+        state.themeImageMetaByUrl.set(url, {
+          width: Number(img.naturalWidth || img.width || 0),
+          height: Number(img.naturalHeight || img.height || 0)
+        });
+        requestAnimationFrame(() => {
+          renderThemeList();
+          renderThemeBackgroundEditor();
+          applyPreviewThemeSurface();
+        });
+        resolve(img);
+      };
       img.onerror = () => reject(new Error("主题背景图加载失败"));
       img.src = url;
     });
   }
 
-  function drawCoverImage(ctx, image, width, height) {
+  function drawCoverImage(ctx, image, width, height, rotation = 0) {
     const iw = Number(image?.naturalWidth || image?.width || 0);
     const ih = Number(image?.naturalHeight || image?.height || 0);
     if (!iw || !ih) return;
-    const scale = Math.max(width / iw, height / ih);
+    const normalizedRotation = normalizeThemeBackgroundRotation(rotation);
+    const rotated = normalizedRotation === 90 || normalizedRotation === 270;
+    const sourceW = rotated ? ih : iw;
+    const sourceH = rotated ? iw : ih;
+    const scale = Math.max(width / sourceW, height / sourceH);
     const dw = iw * scale;
     const dh = ih * scale;
-    const dx = (width - dw) / 2;
-    const dy = (height - dh) / 2;
-    ctx.drawImage(image, dx, dy, dw, dh);
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate((normalizedRotation * Math.PI) / 180);
+    ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
+  }
+
+  function applyCanvasBackgroundImageAdjustments(ctx, width, height, spec) {
+    const brightness = themeBackgroundBrightness(spec);
+    if (brightness < 100) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${(100 - brightness) / 100})`;
+      ctx.fillRect(0, 0, width, height);
+    }
+    const blur = themeBackgroundBlurRadius(spec);
+    if (blur > 0) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.18, blur / 160)})`;
+      ctx.fillRect(0, 0, width, height);
+    }
   }
 
   async function renderPreviewCanvas(targetWidth) {
     const rows = getRows();
     const previewPadding = LONG_IMAGE_PREVIEW_PADDING;
     const rowGap = LONG_IMAGE_PREVIEW_ROW_GAP;
+    const previewMetrics = resolvePreviewMetrics();
     const keyboardWidth = Math.min(
       LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH,
       Math.max(1, targetWidth - previewPadding * 2)
@@ -5680,19 +6347,40 @@
     const gboardStyle = !!state.themeAppSync?.gboardStyle;
     const punctPos = state.themeAppSync?.punctPos || 'bottom';
     const rowPercents = resolveRowHeightPercents(rows);
-    const rowHeights = rowPercents.map(effectiveRowHeight);
-    const contentHeight = rowHeights.reduce((sum, h) => sum + h, 0) + rows.length * rowGap;
-    const height = Math.max(1, contentHeight + previewPadding * 2);
+    const scaleForCanvas = previewMetrics ? keyboardWidth / Math.max(1, previewMetrics.maxWidth) : 1;
+    const bottomPadding = previewMetrics ? previewMetrics.bottomPadding * scaleForCanvas : 0;
+    const contentHeight = previewMetrics
+      ? Math.max(rows.length * 28, previewMetrics.targetHeight * scaleForCanvas)
+      : null;
+    const rowHeights = contentHeight
+      ? rowPercents.map((percent) => Math.max(28, Math.round(contentHeight * percent / 100)))
+      : rowPercents.map(effectiveRowHeight);
+    const height = Math.max(1, rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, rows.length - 1) * rowGap + bottomPadding + previewPadding * 2);
     const canvas = document.createElement("canvas");
     canvas.width = targetWidth;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     const keyboardColor = resolvePreviewSurfaceColor();
     const theme = currentThemeEntry();
-    if (theme?.backgroundImage) {
+    const sourceUrl = theme?.backgroundImage || resolveThemeAssetUrl(theme?.backgroundImageObject);
+    let blurredBackgroundCanvas = null;
+    if (sourceUrl) {
       try {
-        const image = await loadImageForCanvas(theme.backgroundImage);
-        if (image) drawCoverImage(ctx, image, targetWidth, height);
+        const image = await loadImageForCanvas(sourceUrl);
+        const backgroundCanvas = document.createElement("canvas");
+        backgroundCanvas.width = targetWidth;
+        backgroundCanvas.height = height;
+        const bgCtx = backgroundCanvas.getContext("2d");
+        if (image) drawCoverImage(bgCtx, image, targetWidth, height, themeBackgroundRotation(theme?.backgroundImageObject));
+        applyCanvasBackgroundImageAdjustments(bgCtx, targetWidth, height, theme?.backgroundImageObject);
+        blurredBackgroundCanvas = document.createElement("canvas");
+        blurredBackgroundCanvas.width = targetWidth;
+        blurredBackgroundCanvas.height = height;
+        const blurCtx = blurredBackgroundCanvas.getContext("2d");
+        blurCtx.filter = `blur(${themeBackgroundBlurRadius(theme?.backgroundImageObject)}px)`;
+        blurCtx.drawImage(backgroundCanvas, 0, 0);
+        blurCtx.filter = "none";
+        ctx.drawImage(backgroundCanvas, 0, 0);
         ctx.globalCompositeOperation = "multiply";
         ctx.fillStyle = keyboardColor;
         ctx.fillRect(0, 0, targetWidth, height);
@@ -5714,9 +6402,11 @@
       const rowHeight = rowHeights[rowIndex];
       const widths = resolveRegularRowWidths(row);
       const rowWidth = widths.reduce((sum, width) => sum + width, 0);
-      let x = (targetWidth - keyboardWidth * rowWidth) / 2;
+      const sidePadding = previewMetrics ? previewMetrics.sidePadding * scaleForCanvas : 0;
+      const availableKeyboardWidth = Math.max(1, keyboardWidth - sidePadding * 2);
+      let x = (targetWidth - availableKeyboardWidth * rowWidth) / 2;
       row.forEach((key, keyIndex) => {
-        const slotWidth = keyboardWidth * (widths[keyIndex] || 0);
+        const slotWidth = availableKeyboardWidth * (widths[keyIndex] || 0);
         const keyX = x + keyHGap;
         const keyY = y + keyVGap;
         const keyW = Math.max(1, slotWidth - keyHGap * 2);
@@ -5730,7 +6420,18 @@
         ctx.save();
         ctx.fillStyle = bg;
         drawRoundRect(ctx, keyX, keyY, keyW, keyH, gboardStyle && isActionKey ? keyH / 2 : keyRadius);
-        ctx.fill();
+        if (blurredBackgroundCanvas && themeBackgroundBlurRadius(theme?.backgroundImageObject) > 0) {
+          ctx.save();
+          ctx.clip();
+          ctx.drawImage(blurredBackgroundCanvas, 0, 0);
+          ctx.fillStyle = bg;
+          ctx.globalAlpha = 0.58;
+          ctx.fillRect(keyX, keyY, keyW, keyH);
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.fill();
+        }
         if (borderEnabled && !borderOutline) {
           // Simulate App's non-stroke key shadow by drawing a thin bottom inset using keyShadowColor.
           ctx.beginPath();
@@ -6052,7 +6753,7 @@
       brightness: Number.isFinite(Number(source?.brightness)) ? Number(source.brightness) : 70,
       cropRect: source?.cropRect ?? null,
       cropRotation: Number.isFinite(Number(source?.cropRotation)) ? Number(source.cropRotation) : 0,
-      blurRadius: Number.isFinite(Number(source?.blurRadius)) ? Number(source.blurRadius) : 0
+      blurRadius: Number.isFinite(Number(source?.blurRadius)) ? Number(source.blurRadius) : 10
     };
   }
 
@@ -6665,6 +7366,7 @@
       state.themeAppSync.keyVGap = typeof payload.keyVGap === "number" ? payload.keyVGap : 3;
       state.themeAppSync.keyRadius = typeof payload.keyRadius === "number" ? payload.keyRadius : 4;
       state.themeAppSync.punctPos = typeof payload.punctPos === "string" ? payload.punctPos : "bottom";
+      state.themeAppSync.previewMetrics = normalizePreviewMetrics(payload);
       syncThemeAppSyncUiFromState();
       syncSurfaceColorIndicator();
       renderLayoutPreview();
@@ -6875,6 +7577,7 @@
   async function main() {
     await initializeBuiltinData();
     setupBeforeUnloadGuard();
+    installThemeCropInteractions();
     initTabs();
     initLayoutTab();
     initThemeTab();
@@ -6897,7 +7600,10 @@
       mobilePreviewCard.addEventListener("toggle", () => {
         requestAnimationFrame(() => {
           updateFixedChromeMetrics();
-          requestAnimationFrame(fitLayoutPreviewText);
+          requestAnimationFrame(() => {
+            syncPreviewBlurMaskGeometry();
+            fitLayoutPreviewText();
+          });
         });
       });
     }
@@ -6914,7 +7620,11 @@
     window.addEventListener("resize", syncThemeJsonHeight);
     window.addEventListener("resize", syncPopupJsonHeight);
     window.addEventListener("resize", updateFixedChromeMetrics);
-    window.addEventListener("resize", () => requestAnimationFrame(fitLayoutPreviewText));
+    window.addEventListener("resize", () => requestAnimationFrame(() => {
+      syncThemeCardBlurMaskGeometry();
+      syncPreviewBlurMaskGeometry();
+      fitLayoutPreviewText();
+    }));
     updateFixedChromeMetrics();
     // Move layout-preview-meta out of preview-shell to avoid zoom,
     // then position it on the same line as the summary via CSS.
