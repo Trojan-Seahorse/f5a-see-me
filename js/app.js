@@ -7423,6 +7423,7 @@
     const customCatalog = Array.from(dedup.values()).map((themeData) => ({
       id: `custom-${Math.random().toString(36).slice(2, 10)}`,
       name: themeData.name,
+      imeOriginalName: themeData.name,
       builtin: false,
       isDark: !!themeData.isDark,
       colors: normalizeThemeColors(themeData.colors),
@@ -7456,6 +7457,9 @@
       ...(current.backgroundImageObject ? { backgroundImage: deepClone(current.backgroundImageObject) } : { backgroundImage: null }),
       ...deepClone(current.colors)
     };
+    const oldName = (typeof current.imeOriginalName === "string" && current.imeOriginalName !== current.name)
+      ? current.imeOriginalName
+      : "";
     if (themeHasBackground(current)) {
       const zipBlob = await buildThemeZipBlob({
         ...current,
@@ -7473,6 +7477,17 @@
         body: JSON.stringify({ theme: payload })
       });
     }
+    if (oldName) {
+      try {
+        await imeApiRequest(`/api/v1/theme?name=${encodeURIComponent(oldName)}`, { method: "DELETE" });
+      } catch (_) { /* best-effort: old theme data removal may not be supported */ }
+      try {
+        await imeApiRequest(`/api/v1/theme/package?name=${encodeURIComponent(oldName)}`, { method: "DELETE" });
+      } catch (_) { /* best-effort: old package removal may not be supported */ }
+    }
+    // After save, record current name as the IME original name so that
+    // subsequent rename+save can detect the old name and delete it.
+    current.imeOriginalName = current.name;
     setStatus("theme-editor-status", `主题已保存到 IME：${payload.name || ""}`, "ok");
     setStatus("theme-qr-meta", `主题已保存到 IME：${payload.name || ""}`, "ok");
   }
