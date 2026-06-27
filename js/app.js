@@ -6824,7 +6824,7 @@
         cropRotation: Number.isFinite(Number(spec.cropRotation)) ? Number(spec.cropRotation) : 0,
         blurRadius: Number.isFinite(Number(spec.blurRadius)) ? Number(spec.blurRadius) : 0
       },
-      colors: deepClone(theme.colors)
+      ...deepClone(theme.colors)
     };
     const zip = new window.JSZip();
     zip.file(`${baseName}.json`, `${prettyJson(exportTheme)}\n`);
