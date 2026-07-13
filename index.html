@@ -290,8 +290,22 @@
           <input id="layout-key-main" type="text">
         </div>
         <div class="form-row key-basic-alt">
-          <label>副字符</label>
+          <label>下划字符</label>
           <input id="layout-key-alt" type="text">
+        </div>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-row key-basic-swipe-up">
+          <label>上划字符</label>
+          <input id="layout-key-swipe-up" type="text">
+        </div>
+        <div class="form-row key-basic-swipe-left">
+          <label>左划字符</label>
+          <input id="layout-key-swipe-left" type="text">
+        </div>
+        <div class="form-row key-basic-swipe-right">
+          <label>右划字符</label>
+          <input id="layout-key-swipe-right" type="text">
         </div>
       </div>
       <div class="form-grid-2">
@@ -372,8 +386,16 @@
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>编辑标签</h3></div>
       <div class="form-row">
-        <label>划动标签</label>
+        <label>下划标签</label>
         <input id="layout-key-labels-swipe" type="text">
+      </div>
+      <div class="form-row">
+        <label>上划标签</label>
+        <input id="layout-key-labels-swipe-up" type="text">
+      </div>
+      <div class="form-row">
+        <label>左划标签</label>
+        <input id="layout-key-labels-swipe-left" type="text">
       </div>
       <div class="form-row">
         <label>副标签</label>
@@ -402,10 +424,31 @@
       </div>
       <div class="form-row">
         <div class="form-inline">
-          <button type="button" id="layout-key-macro-edit-swipe">划动事件…</button>
+          <button type="button" id="layout-key-macro-edit-swipe">下划事件…</button>
           <button type="button" id="layout-key-macro-clear-swipe">清空</button>
         </div>
         <div id="layout-key-macro-swipe-summary" class="status"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-swipe-up">上划事件…</button>
+          <button type="button" id="layout-key-macro-clear-swipe-up">清空</button>
+        </div>
+        <div id="layout-key-macro-swipe-up-summary" class="status"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-swipe-left">左划事件…</button>
+          <button type="button" id="layout-key-macro-clear-swipe-left">清空</button>
+        </div>
+        <div id="layout-key-macro-swipe-left-summary" class="status"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-swipe-right">右划事件…</button>
+          <button type="button" id="layout-key-macro-clear-swipe-right">清空</button>
+        </div>
+        <div id="layout-key-macro-swipe-right-summary" class="status"></div>
       </div>
       <div class="form-row">
         <div class="form-inline">

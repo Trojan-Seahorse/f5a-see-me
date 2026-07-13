@@ -2528,12 +2528,20 @@
     if (!c.hasSubLabel) delete key.subLabel;
     if (!c.hasDisplayText) delete key.displayText;
     if (!c.hasSwipeLabel) delete key.swipeLabel;
+    if (!c.hasSwipeUpLabel) delete key.altLabelUp;
+    if (!c.hasSwipeLeftLabel) delete key.swipeLeftLabel;
     if (!c.hasMacroLabels) {
       delete key.altLabel;
       delete key.longPressLabel;
     }
+    if (!c.hasSwipeUp) delete key.swipeUp;
+    if (!c.hasSwipeLeft) delete key.swipeLeftChar;
+    if (!c.hasSwipeRight) delete key.swipeRightChar;
     if (!c.hasTapAction) delete key.tap;
     if (!c.hasSwipeAction) delete key.swipe;
+    if (!c.hasSwipeUpAction) delete key.swipeUp;
+    if (!c.hasSwipeLeftAction) delete key.swipeLeft;
+    if (!c.hasSwipeRightAction) delete key.swipeRight;
     if (!c.hasLongPressAction) delete key.longPress;
 
     const availableColorKeys = new Set();
@@ -2626,6 +2634,12 @@
     return "";
   }
 
+  function keySubTextUp(key) {
+    if (key.type === "MacroKey") return key.altLabelUp || "";
+    if (key.type === "AlphabetKey" && key.swipeUp) return key.swipeUp;
+    return "";
+  }
+
   function previewMainFontMaxForKey(key) {
     if (key?.type === "LanguageKey") return 15;
     const variant = keyVariantClass(key);
@@ -2714,10 +2728,16 @@
         ].filter(Boolean).join(' ');
         const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
         const keyStyle = `--preview-key-bg:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};--preview-key-shadow:${previewColors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
-        const alt = keySubText(key) && punctPlacement !== 'none'
-          ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : punctPlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
+        const upLabel = keySubTextUp(key);
+        const hasDual = !!upLabel;
+        const effectivePlacement = hasDual && punctPlacement !== 'none' && punctPlacement !== 'bottom' ? 'bottom' : punctPlacement;
+        const alt = keySubText(key) && effectivePlacement !== 'none'
+          ? `<span class="layout-key-alt ${effectivePlacement === 'bottom' ? 'bottom' : effectivePlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        const altUp = upLabel
+          ? `<span class="layout-key-alt top-right" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(upLabel)}</span>`
+          : "";
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}${altUp}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
     requestAnimationFrame(() => {
@@ -3720,14 +3740,22 @@
     const labelTypes = new Set(["LayoutSwitchKey", "SymbolKey", "MacroKey"]);
     return {
       hasMainAlt: type === "AlphabetKey",
+      hasSwipeUp: type === "AlphabetKey",
+      hasSwipeLeft: type === "AlphabetKey",
+      hasSwipeRight: type === "AlphabetKey",
       hasLabel: labelTypes.has(type),
       hasSubLabel: type === "LayoutSwitchKey",
       hasEditableSubLabel: false,
       hasDisplayText: displayTextTypes.has(type),
       hasSwipeLabel: swipeTypes.has(type),
+      hasSwipeUpLabel: type === "MacroKey" || type === "BackspaceKey",
+      hasSwipeLeftLabel: type === "BackspaceKey",
       hasMacroLabels: type === "MacroKey",
       hasTapAction: type === "MacroKey",
       hasSwipeAction: type === "MacroKey" || swipeTypes.has(type),
+      hasSwipeUpAction: type === "MacroKey" || type === "BackspaceKey",
+      hasSwipeLeftAction: type === "MacroKey" || type === "BackspaceKey",
+      hasSwipeRightAction: type === "MacroKey",
       hasLongPressAction: type === "MacroKey"
     };
   }
@@ -3740,6 +3768,9 @@
     typeSelect.value = keyTypes.includes(type) ? type : "AlphabetKey";
     el("layout-key-main").value = key.main || "";
     el("layout-key-alt").value = key.alt || "";
+    el("layout-key-swipe-up").value = key.swipeUp || "";
+    el("layout-key-swipe-left").value = key.swipeLeftChar || "";
+    el("layout-key-swipe-right").value = key.swipeRightChar || "";
     el("layout-key-label").value = key.label || "";
     el("layout-key-sub-label").value = key.subLabel || "";
     el("layout-key-weight").value = key.weight == null ? "" : String(key.weight);
@@ -3754,20 +3785,29 @@
     const inComposeEdit = !!state.composeNestedContext;
     const canEditCompose = !inComposeEdit;
     const showDisplay = c.hasDisplayText;
-    const showLabels = c.hasSwipeLabel || c.hasMacroLabels;
-    const showMacro = c.hasTapAction || c.hasSwipeAction || c.hasLongPressAction;
+    const showLabels = c.hasSwipeLabel || c.hasSwipeUpLabel || c.hasSwipeLeftLabel || c.hasMacroLabels;
+    const showMacro = c.hasTapAction || c.hasSwipeAction || c.hasSwipeUpAction || c.hasSwipeLeftAction || c.hasSwipeRightAction || c.hasLongPressAction;
     document.querySelectorAll(".key-basic-main, .key-basic-alt").forEach((node) => { node.hidden = !c.hasMainAlt; });
+    document.querySelectorAll(".key-basic-swipe-up").forEach((node) => { node.hidden = !c.hasSwipeUp; });
+    document.querySelectorAll(".key-basic-swipe-left").forEach((node) => { node.hidden = !c.hasSwipeLeft; });
+    document.querySelectorAll(".key-basic-swipe-right").forEach((node) => { node.hidden = !c.hasSwipeRight; });
     document.querySelectorAll(".key-basic-label").forEach((node) => { node.hidden = !c.hasLabel; });
     document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasEditableSubLabel; });
     document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit; });
     const mainInput = el("layout-key-main");
     const altInput = el("layout-key-alt");
+    const swipeUpInput = el("layout-key-swipe-up");
+    const swipeLeftInput = el("layout-key-swipe-left");
+    const swipeRightInput = el("layout-key-swipe-right");
     const labelInput = el("layout-key-label");
     const subLabelInput = el("layout-key-sub-label");
     const weightInput = el("layout-key-weight");
     const rowHeightInput = el("layout-key-row-height");
     if (mainInput) mainInput.disabled = !c.hasMainAlt;
     if (altInput) altInput.disabled = !c.hasMainAlt;
+    if (swipeUpInput) swipeUpInput.disabled = !c.hasSwipeUp;
+    if (swipeLeftInput) swipeLeftInput.disabled = !c.hasSwipeLeft;
+    if (swipeRightInput) swipeRightInput.disabled = !c.hasSwipeRight;
     if (labelInput) labelInput.disabled = !c.hasLabel;
     if (subLabelInput) subLabelInput.disabled = !c.hasEditableSubLabel;
     if (weightInput) weightInput.disabled = inComposeEdit;
@@ -3793,13 +3833,21 @@
     if (!c.hasDisplayText && keyDialogState.draft) delete keyDialogState.draft.displayText;
     if (!c.hasSubLabel && keyDialogState.draft) delete keyDialogState.draft.subLabel;
     if (!c.hasSwipeLabel && keyDialogState.draft) delete keyDialogState.draft.swipeLabel;
+    if (!c.hasSwipeUpLabel && keyDialogState.draft) delete keyDialogState.draft.altLabelUp;
+    if (!c.hasSwipeLeftLabel && keyDialogState.draft) delete keyDialogState.draft.swipeLeftLabel;
     if (!c.hasMacroLabels && keyDialogState.draft) {
       delete keyDialogState.draft.altLabel;
       delete keyDialogState.draft.longPressLabel;
     }
     if (!c.hasTapAction && keyDialogState.draft) delete keyDialogState.draft.tap;
     if (!c.hasSwipeAction && keyDialogState.draft) delete keyDialogState.draft.swipe;
+    if (!c.hasSwipeUpAction && keyDialogState.draft) delete keyDialogState.draft.swipeUp;
+    if (!c.hasSwipeLeftAction && keyDialogState.draft) delete keyDialogState.draft.swipeLeft;
+    if (!c.hasSwipeRightAction && keyDialogState.draft) delete keyDialogState.draft.swipeRight;
     if (!c.hasLongPressAction && keyDialogState.draft) delete keyDialogState.draft.longPress;
+    if (!c.hasSwipeUp && keyDialogState.draft) delete keyDialogState.draft.swipeUp;
+    if (!c.hasSwipeLeft && keyDialogState.draft) { delete keyDialogState.draft.swipeLeftChar; }
+    if (!c.hasSwipeRight && keyDialogState.draft) { delete keyDialogState.draft.swipeRightChar; }
     if (inComposeEdit && keyDialogState.draft) {
       delete keyDialogState.draft.weight;
       delete keyDialogState.draft.rowHeightPercent;
@@ -3827,6 +3875,8 @@
     setStatus("layout-key-display-text-summary", displaySummary, "");
     const labelParts = [];
     if (c.hasSwipeLabel) labelParts.push(`swipeLabel${key.swipeLabel ? "✓" : "×"}`);
+    if (c.hasSwipeUpLabel) labelParts.push(`altLabelUp${key.altLabelUp ? "✓" : "×"}`);
+    if (c.hasSwipeLeftLabel) labelParts.push(`swipeLeftLabel${key.swipeLeftLabel ? "✓" : "×"}`);
     if (c.hasMacroLabels) {
       labelParts.push(`altLabel${key.altLabel ? "✓" : "×"}`);
       labelParts.push(`longPressLabel${key.longPressLabel ? "✓" : "×"}`);
@@ -3835,6 +3885,9 @@
     const macroParts = [];
     if (c.hasTapAction) macroParts.push(`tap${key.tap ? "✓" : "×"}`);
     if (c.hasSwipeAction) macroParts.push(`swipe${key.swipe ? "✓" : "×"}`);
+    if (c.hasSwipeUpAction) macroParts.push(`swipeUp${key.swipeUp ? "✓" : "×"}`);
+    if (c.hasSwipeLeftAction) macroParts.push(`swipeLeft${key.swipeLeft ? "✓" : "×"}`);
+    if (c.hasSwipeRightAction) macroParts.push(`swipeRight${key.swipeRight ? "✓" : "×"}`);
     if (c.hasLongPressAction) macroParts.push(`longPress${key.longPress ? "✓" : "×"}`);
     setStatus("layout-key-macro-summary", `事件：${macroParts.length ? macroParts.join(" / ") : "当前类型不适用"}`, "");
     const colorFields = availableColorFieldsForType(type);
@@ -3866,6 +3919,24 @@
     } else {
       delete key.main;
       delete key.alt;
+    }
+    if (c.hasSwipeUp) {
+      const swipeUp = el("layout-key-swipe-up").value;
+      if (swipeUp.trim()) key.swipeUp = swipeUp; else delete key.swipeUp;
+    } else {
+      delete key.swipeUp;
+    }
+    if (c.hasSwipeLeft) {
+      const swipeLeft = el("layout-key-swipe-left").value;
+      if (swipeLeft.trim()) key.swipeLeftChar = swipeLeft; else delete key.swipeLeftChar;
+    } else {
+      delete key.swipeLeftChar;
+    }
+    if (c.hasSwipeRight) {
+      const swipeRight = el("layout-key-swipe-right").value;
+      if (swipeRight.trim()) key.swipeRightChar = swipeRight; else delete key.swipeRightChar;
+    } else {
+      delete key.swipeRightChar;
     }
     if (c.hasLabel) {
       if (type === "LayoutSwitchKey") key.label = label.trim() ? label : "?123";
@@ -4011,12 +4082,18 @@
     const key = keyDialogState.draft || {};
     const c = keyTypeCapabilities(key.type || "AlphabetKey");
     el("layout-key-labels-swipe").value = key.swipeLabel || "";
+    el("layout-key-labels-swipe-up").value = key.altLabelUp || "";
+    el("layout-key-labels-swipe-left").value = key.swipeLeftLabel || "";
     el("layout-key-labels-alt").value = key.altLabel || "";
     el("layout-key-labels-long-press").value = key.longPressLabel || "";
     const swipeRow = el("layout-key-labels-swipe")?.closest(".form-row");
+    const swipeUpRow = el("layout-key-labels-swipe-up")?.closest(".form-row");
+    const swipeLeftRow = el("layout-key-labels-swipe-left")?.closest(".form-row");
     const altRow = el("layout-key-labels-alt")?.closest(".form-row");
     const longPressRow = el("layout-key-labels-long-press")?.closest(".form-row");
     if (swipeRow) swipeRow.hidden = !c.hasSwipeLabel;
+    if (swipeUpRow) swipeUpRow.hidden = !c.hasSwipeUpLabel;
+    if (swipeLeftRow) swipeLeftRow.hidden = !c.hasSwipeLeftLabel;
     if (altRow) altRow.hidden = !c.hasMacroLabels;
     if (longPressRow) longPressRow.hidden = !c.hasMacroLabels;
     el("layout-key-labels-dialog").showModal();
@@ -4030,6 +4107,18 @@
       if (swipe) key.swipeLabel = swipe; else delete key.swipeLabel;
     } else {
       delete key.swipeLabel;
+    }
+    if (c.hasSwipeUpLabel) {
+      const swipeUp = el("layout-key-labels-swipe-up").value.trim();
+      if (swipeUp) key.altLabelUp = swipeUp; else delete key.altLabelUp;
+    } else {
+      delete key.altLabelUp;
+    }
+    if (c.hasSwipeLeftLabel) {
+      const swipeLeft = el("layout-key-labels-swipe-left").value.trim();
+      if (swipeLeft) key.swipeLeftLabel = swipeLeft; else delete key.swipeLeftLabel;
+    } else {
+      delete key.swipeLeftLabel;
     }
     if (c.hasMacroLabels) {
       const alt = el("layout-key-labels-alt").value.trim();
@@ -4053,10 +4142,19 @@
     el("layout-key-macro-clear-tap").disabled = !c.hasTapAction;
     el("layout-key-macro-edit-swipe").disabled = !c.hasSwipeAction;
     el("layout-key-macro-clear-swipe").disabled = !c.hasSwipeAction;
+    el("layout-key-macro-edit-swipe-up").disabled = !c.hasSwipeUpAction;
+    el("layout-key-macro-clear-swipe-up").disabled = !c.hasSwipeUpAction;
+    el("layout-key-macro-edit-swipe-left").disabled = !c.hasSwipeLeftAction;
+    el("layout-key-macro-clear-swipe-left").disabled = !c.hasSwipeLeftAction;
+    el("layout-key-macro-edit-swipe-right").disabled = !c.hasSwipeRightAction;
+    el("layout-key-macro-clear-swipe-right").disabled = !c.hasSwipeRightAction;
     el("layout-key-macro-edit-long-press").disabled = !c.hasLongPressAction;
     el("layout-key-macro-clear-long-press").disabled = !c.hasLongPressAction;
     setStatus("layout-key-macro-tap-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.tap)), "");
     setStatus("layout-key-macro-swipe-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipe)), "");
+    setStatus("layout-key-macro-swipe-up-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipeUp)), "");
+    setStatus("layout-key-macro-swipe-left-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipeLeft)), "");
+    setStatus("layout-key-macro-swipe-right-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipeRight)), "");
     setStatus("layout-key-macro-long-press-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.longPress)), "");
     el("layout-key-macro-dialog").showModal();
   }
@@ -4066,6 +4164,9 @@
     const c = keyTypeCapabilities(key.type || "AlphabetKey");
     if (!c.hasTapAction) delete key.tap;
     if (!c.hasSwipeAction) delete key.swipe;
+    if (!c.hasSwipeUpAction) delete key.swipeUp;
+    if (!c.hasSwipeLeftAction) delete key.swipeLeft;
+    if (!c.hasSwipeRightAction) delete key.swipeRight;
     if (!c.hasLongPressAction) delete key.longPress;
     keyDialogState.draft = key;
     refreshKeyDialogSummaries();
@@ -4209,13 +4310,13 @@
   function openMacroEventEditor(eventName) {
     resetMacroStepDragState();
     const key = keyDialogState.draft || {};
-    const actionKey = eventName === "tap" ? "tap" : eventName === "swipe" ? "swipe" : "longPress";
+    const actionKey = eventName === "tap" ? "tap" : eventName === "swipe" ? "swipe" : eventName === "swipeUp" ? "swipeUp" : eventName === "swipeLeft" ? "swipeLeft" : eventName === "swipeRight" ? "swipeRight" : "longPress";
     state.macroEventEditor = {
       eventName,
       steps: readMacroStepsFromAction(key[actionKey])
     };
     renderMacroEventEditor();
-    const eventNameMap = { tap: "点击事件", swipe: "划动事件", longPress: "长按事件" };
+    const eventNameMap = { tap: "点击事件", swipe: "下划事件", swipeUp: "上划事件", swipeLeft: "左划事件", swipeRight: "右划事件", longPress: "长按事件" };
     el("layout-key-macro-event-title").textContent = `编辑 ${eventNameMap[eventName] || eventName}`;
     el("layout-key-macro-event-dialog").showModal();
   }
@@ -4407,7 +4508,13 @@
       ? "tap"
       : state.macroEventEditor.eventName === "swipe"
         ? "swipe"
-        : "longPress";
+        : state.macroEventEditor.eventName === "swipeUp"
+          ? "swipeUp"
+          : state.macroEventEditor.eventName === "swipeLeft"
+            ? "swipeLeft"
+            : state.macroEventEditor.eventName === "swipeRight"
+              ? "swipeRight"
+              : "longPress";
     if (action) key[actionKey] = action;
     else delete key[actionKey];
     keyDialogState.draft = key;

@@ -91,6 +91,9 @@
     el("layout-key-macro-cancel").addEventListener("click", () => el("layout-key-macro-dialog").close());
     el("layout-key-macro-edit-tap").addEventListener("click", () => openMacroEventEditor("tap"));
     el("layout-key-macro-edit-swipe").addEventListener("click", () => openMacroEventEditor("swipe"));
+    el("layout-key-macro-edit-swipe-up").addEventListener("click", () => openMacroEventEditor("swipeUp"));
+    el("layout-key-macro-edit-swipe-left").addEventListener("click", () => openMacroEventEditor("swipeLeft"));
+    el("layout-key-macro-edit-swipe-right").addEventListener("click", () => openMacroEventEditor("swipeRight"));
     el("layout-key-macro-edit-long-press").addEventListener("click", () => openMacroEventEditor("longPress"));
     el("layout-key-macro-clear-tap").addEventListener("click", () => {
       if (keyDialogState.draft) delete keyDialogState.draft.tap;
@@ -99,6 +102,21 @@
     });
     el("layout-key-macro-clear-swipe").addEventListener("click", () => {
       if (keyDialogState.draft) delete keyDialogState.draft.swipe;
+      openMacroDialog();
+      refreshKeyDialogSummaries();
+    });
+    el("layout-key-macro-clear-swipe-up").addEventListener("click", () => {
+      if (keyDialogState.draft) delete keyDialogState.draft.swipeUp;
+      openMacroDialog();
+      refreshKeyDialogSummaries();
+    });
+    el("layout-key-macro-clear-swipe-left").addEventListener("click", () => {
+      if (keyDialogState.draft) delete keyDialogState.draft.swipeLeft;
+      openMacroDialog();
+      refreshKeyDialogSummaries();
+    });
+    el("layout-key-macro-clear-swipe-right").addEventListener("click", () => {
+      if (keyDialogState.draft) delete keyDialogState.draft.swipeRight;
       openMacroDialog();
       refreshKeyDialogSummaries();
     });
