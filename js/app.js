@@ -2534,7 +2534,7 @@
       delete key.altLabel;
       delete key.longPressLabel;
     }
-    if (!c.hasSwipeUp) delete key.swipeUp;
+    if (!c.hasSwipeUp) { delete key.swipeUp; delete key.swipeUpChar; }
     if (!c.hasSwipeLeft) delete key.swipeLeftChar;
     if (!c.hasSwipeRight) delete key.swipeRightChar;
     if (!c.hasTapAction) delete key.tap;
@@ -2636,7 +2636,7 @@
 
   function keySubTextUp(key) {
     if (key.type === "MacroKey") return key.altLabelUp || "";
-    if (key.type === "AlphabetKey" && key.swipeUp) return key.swipeUp;
+    if (key.type === "AlphabetKey") return key.swipeUpChar || key.swipeUp || "";
     return "";
   }
 
@@ -3768,7 +3768,7 @@
     typeSelect.value = keyTypes.includes(type) ? type : "AlphabetKey";
     el("layout-key-main").value = key.main || "";
     el("layout-key-alt").value = key.alt || "";
-    el("layout-key-swipe-up").value = key.swipeUp || "";
+    el("layout-key-swipe-up").value = key.swipeUpChar || key.swipeUp || "";
     el("layout-key-swipe-left").value = key.swipeLeftChar || "";
     el("layout-key-swipe-right").value = key.swipeRightChar || "";
     el("layout-key-label").value = key.label || "";
@@ -3845,7 +3845,7 @@
     if (!c.hasSwipeLeftAction && keyDialogState.draft) delete keyDialogState.draft.swipeLeft;
     if (!c.hasSwipeRightAction && keyDialogState.draft) delete keyDialogState.draft.swipeRight;
     if (!c.hasLongPressAction && keyDialogState.draft) delete keyDialogState.draft.longPress;
-    if (!c.hasSwipeUp && keyDialogState.draft) delete keyDialogState.draft.swipeUp;
+    if (!c.hasSwipeUp && keyDialogState.draft) { delete keyDialogState.draft.swipeUp; delete keyDialogState.draft.swipeUpChar; }
     if (!c.hasSwipeLeft && keyDialogState.draft) { delete keyDialogState.draft.swipeLeftChar; }
     if (!c.hasSwipeRight && keyDialogState.draft) { delete keyDialogState.draft.swipeRightChar; }
     if (inComposeEdit && keyDialogState.draft) {
@@ -3922,8 +3922,11 @@
     }
     if (c.hasSwipeUp) {
       const swipeUp = el("layout-key-swipe-up").value;
-      if (swipeUp.trim()) key.swipeUp = swipeUp; else delete key.swipeUp;
+      if (swipeUp.trim()) key.swipeUpChar = swipeUp; else delete key.swipeUpChar;
+      // migrate from old field name
+      delete key.swipeUp;
     } else {
+      delete key.swipeUpChar;
       delete key.swipeUp;
     }
     if (c.hasSwipeLeft) {
